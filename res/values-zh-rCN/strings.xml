@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+	<string name="application_name">展望桌面</string>
+    <string name="permlab_install_shortcut">安装快捷方式</string>
+    <string name="permdesc_install_shortcut">允许应用程序在没有用户介入的情况下添加快捷方式。</string>
+    <string name="permlab_uninstall_shortcut">卸载快捷方式</string>
+    <string name="permdesc_uninstall_shortcut">允许应用程序在没有用户介入的情况下删除快捷方式。</string>
+    <string name="permlab_install_widget">安装小插件</string>
+    <string name="permdesc_install_widget">允许应用程序在没有用户介入的情况下添加小插件。</string>
+    <string name="permlab_read_settings">读取主屏幕的设置和快捷方式</string>
+    <string name="permdesc_read_settings">允许应用程序读取主屏幕的设置和快捷方式。</string>
+    <string name="permlab_write_settings">写入主屏幕的设置和快捷方式</string>
+    <string name="permdesc_write_settings">允许应用程序更改主屏幕的设置和快捷方式。</string>
+</resources>

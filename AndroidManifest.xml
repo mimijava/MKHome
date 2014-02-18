@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 
+	versionCode: 用于检查APP版本
+	versionName: 用户版本号
+	sharedUserId: 签名用，进程ID， 通过共享userid,拥有相同userid的用户可以配置成运行在同一进程当中，因此默认就是可以互相访问任意数据的
+ -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="cn.minking.launcher"
+    android:versionCode="1"
+    android:versionName="1.0" 
+    android:sharedUserId="@string/shared_user_id"
+    >
+    <!-- 
+    	自定义权限
+     -->
+	<permission 
+	    android:name="com.android.launcher.permission.INSTALL_SHORTCUT"
+	    android:protectionLevel="normal"
+	    android:permissionGroup="android.permission-group.SYSTEM_TOOLS"
+	    android:description="@string/permdesc_install_shortcut"
+	    android:label="@string/permlab_install_shortcut"
+	    />
+	<permission 
+	    android:name="com.android.launcher.permission.UNINSTALL_SHORTCUT"
+	    android:protectionLevel="normal"
+	    android:permissionGroup="android.permission-group.SYSTEM_TOOLS"
+	    android:description="@string/permdesc_uninstall_shortcut"
+	    android:label="@string/permlab_uninstall_shortcut"
+	    />
+	<permission
+	    android:name="com.android.launcher.permission.INSTALL_WIDGET"
+	    android:protectionLevel="normal"
+	    android:permissionGroup="android.permission-group.SYSTEM_TOOLS" 
+	    android:description="@string/permdesc_install_widget"
+	    android:label="@string/permlab_install_widget"
+	    />
+	<permission 
+	    android:name="com.android.launcher.permission.READ_SETTINGS"
+	    android:protectionLevel="normal"
+	    android:permissionGroup="android.permission-group.SYSTEM_TOOLS" 
+	    android:description="@string/permdesc_read_settings"
+	    android:label="@string/permlab_read_settings"
+	    />
+	<permission
+	    android:name="com.android.launcher.permission.WRITE_SETTINGS"
+	    android:protectionLevel="normal"
+	    android:permissionGroup="android.permission-group.SYSTEM_TOOLS" 
+	    android:description="@string/permdesc_write_settings"
+	    android:label="@string/permlab_write_settings" 
+	    />
+	<uses-permission android:name="android.permission.ACCESS_DOWNLOAD_MANAGER" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-permission android:name="android.permission.CHANGE_CONFIGURATION" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
+    <uses-permission android:name="android.permission.GET_TASKS" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.SET_WALLPAPER" />
+    <uses-permission android:name="android.permission.SET_WALLPAPER_HINTS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_SYNC_STATS" />
+    <uses-permission android:name="android.permission.READ_SYNC_SETTINGS" />
+    <uses-permission android:name="com.android.launcher.permission.READ_SETTINGS" />
+    <uses-permission android:name="com.android.launcher.permission.WRITE_SETTINGS" />
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    
+    <uses-sdk
+        android:minSdkVersion="15"
+        android:targetSdkVersion="17" />
+
+    <!-- 
+    	name: android:name属性是用来设置所有activity 属于哪个application的
+    	process ： 独立进程
+    	hardwareAccelerated : 判断是否启用加速传感器
+    	largeHeap: 使用LargeHeap让Android分配更多内存, API Level 11以上支持
+     -->
+    <application
+        android:name="cn.minking.launcher.LauncherApplication"
+        android:icon="@drawable/icon_launcher"
+        android:label="@string/application_name"
+        android:process="@string/process" 
+        android:hardwareAccelerated="@bool/config_hardware_accelerated"
+        android:largeHeap="@bool/config_large_heap"
+        android:allowBackup="@bool/config_allow_backup" >
+        <!-- 
+        	clearTaskOnLaunch： 支持桌面清除任务
+        	launchMode: singleTask : Task栈中将会只有一个该Activity的实例
+        	screenOrientation:sensorPortrait： 纵向显示，但是基于设备传感器，既可以是按正常方向显示，也可以反向显示, API LEVEL 9以上支持
+        	configChanges:设置这个属性可以使Activity捕捉设备状态变化, 
+        				      当我们横竖屏切换的时候会直接调用onCreate方法中的onConfigurationChanged方法，而不会重新执行onCreate方法
+         -->
+        <activity 
+            android:name="cn.minking.launcher.Launcher"
+            android:clearTaskOnLaunch="true"
+            android:stateNotNeeded="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="sensorPortrait"
+            android:configChanges="mcc|mnc|keyboard|keyboardHidden|navigation|orientation|uiMode|screenSize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.HOME"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.MONKEY"/>
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <receiver 
+            android:name="cn.minking.launcher.InstallShortcutReceiver"
+            android:permission="com.android.launcher.permission.INSTALL_SHORTCUT">
+            <intent-filter >
+                <action android:name="com.android.launcher.action.INSTALL_SHORTCUT"/>
+            </intent-filter>
+        </receiver>
+        
+        <receiver 
+            android:name="cn.minking.launcher.UninstallShortcutReceiver"
+            android:permission="com.android.launcher.permission.UNINSTALL_SHORTCUT">
+            <intent-filter >
+                <action android:name="com.android.launcher.action.UNINSTALL_SHORTCUT"/>
+            </intent-filter>
+        </receiver>
+        <receiver 
+            android:name="cn.minking.launcher.InstallWidgetReceiver" 
+            android:permission="com.android.launcher.permission.INSTALL_WIDGET">
+            <intent-filter>
+                <action android:name="com.android.launcher.action.INSTALL_WIDGET" />
+            </intent-filter>
+        </receiver>
+        <receiver 
+            android:name="cn.minking.launcher.RestoreFinishedReceiver">
+            <intent-filter>
+                <action android:name="android.intent.action.RESTORE_FINISH" />
+            </intent-filter>
+        </receiver>
+        <provider 
+            android:name="cn.minking.launcher.LauncherProvider"
+            android:readPermission="com.android.launcher.permission.READ_SETTINGS"
+            android:writePermission="com.android.launcher.permission.WRITE_SETTINGS" 
+            android:authorities="cn.minking.launcher.settings"/>
+        <service 
+            android:name="cn.minking.launcher.snapshot.HomeSnapshotHelperService"
+            android:exported="true"
+            >
+            <intent-filter>
+                <action android:name="cn.minking.launcher.snapshot_helper_intent"/>
+            </intent-filter>
+        </service>
+    </application>
+
+</manifest>

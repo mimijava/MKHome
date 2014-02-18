@@ -1,0 +1,17 @@
+<resources>
+    <string name="home_indicator">bottom_point</string>
+    <string name="application_name">ZwLauncher</string>
+    <string name="shared_user_id"/>
+    <string name="process"/>
+    <string name="permlab_install_shortcut">Install shortcuts</string>
+    <string name="permdesc_install_shortcut">Allows an application to add shortcuts without user intervention.</string>
+    <string name="permlab_uninstall_shortcut">Uninstall shortcuts</string>
+    <string name="permdesc_uninstall_shortcut">Allows an application to remove shortcuts without user intervention.</string>
+    <string name="permlab_install_widget">Install widgets</string>
+    <string name="permdesc_install_widget">Allows an application to add widgets without user intervention.</string>
+    <string name="permlab_read_settings">Read Home Settings and Shortcuts</string>
+    <string name="permdesc_read_settings">Allows an application to read the settings and shortcuts in Home.</string>
+    <string name="permlab_write_settings">Edit Home Settings and Shortcuts</string>
+    <string name="permdesc_write_settings">Allows an application to change the settings and shortcuts in Home.</string>
+
+</resources>

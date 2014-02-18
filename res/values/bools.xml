@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <bool name="config_hardware_accelerated">true</bool>
+    <bool name="config_use_software_icon">true</bool>
+    <bool name="config_large_heap">true</bool>
+    <bool name="config_allow_backup">true</bool>
+</resources>
