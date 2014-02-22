@@ -5,7 +5,7 @@ import android.util.AttributeSet;
 import android.widget.FrameLayout;
 
 public class DragLayer extends FrameLayout {
-	public DragLayer(Context paramContext, AttributeSet paramAttributeSet) {
-		super(paramContext, paramAttributeSet);
-	}
+    public DragLayer(Context paramContext, AttributeSet paramAttributeSet) {
+        super(paramContext, paramAttributeSet);
+    }
 }

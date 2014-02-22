@@ -11,4 +11,5 @@
     <string name="permdesc_read_settings">允许应用程序读取主屏幕的设置和快捷方式。</string>
     <string name="permlab_write_settings">写入主屏幕的设置和快捷方式</string>
     <string name="permdesc_write_settings">允许应用程序更改主屏幕的设置和快捷方式。</string>
+    <string name="preferences_title">桌面效果设置</string>
 </resources>

@@ -17,4 +17,5 @@
    	<string name="scene_title_work">Work</string>
    	<string name="scene_name_default" translatable="false">default</string>
    	<string name="scene_name_work" translatable="false">work</string>
+   	<string name="preferences_title">Launcher Settings</string>
 </resources>
