@@ -38,7 +38,7 @@ public class DeferredHandler {
         }
 
         public boolean queueIdle() {
-            handleMessage(null);
+            handleMessage (null);
             return false;
         }
     }
