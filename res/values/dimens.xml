@@ -4,7 +4,6 @@
     <dimen name="config_icon_height">60.0dip</dimen>
     <dimen name="workspace_padding_side">8.5dip</dimen>
     <dimen name="workspace_margin_bottom">71.34dip</dimen>
-    <dimen name="hotseats_padding_side">8.5dip</dimen>
     <dimen name="user_folder_cell_height">80.0dip</dimen>
     <dimen name="icon_title_padding_bottom">8.0dip</dimen>
     <item type="dimen" name="workspace_icon_text_shadow_radius">2.0</item>
@@ -31,6 +30,7 @@
     <dimen name="workspace_widget_padding_top">12.0dip</dimen>
     <dimen name="workspace_widget_padding_bottom">18.0dip</dimen>
     <dimen name="icon_side_margin">1.0dip</dimen>
+    <dimen name="hotseats_padding_side">8.5dip</dimen>
     <dimen name="hotseats_padding_top">0.0dip</dimen>
     <dimen name="hotseats_padding_bottom">1.0dip</dimen>
     <dimen name="folder_vertical_padding">80.0dip</dimen>
