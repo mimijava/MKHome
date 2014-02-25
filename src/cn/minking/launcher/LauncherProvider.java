@@ -3,18 +3,26 @@ package cn.minking.launcher;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
+import java.util.List;
 
 import org.xmlpull.v1.XmlPullParser;
 import org.xmlpull.v1.XmlPullParserException;
 import org.xmlpull.v1.XmlPullParserFactory;
 
+import cn.minking.launcher.LauncherSettings.Favorites;
+import android.app.SearchManager;
 import android.appwidget.AppWidgetHost;
+import android.appwidget.AppWidgetManager;
+import android.appwidget.AppWidgetProviderInfo;
+import android.content.ComponentName;
 import android.content.ContentProvider;
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.SharedPreferences.Editor;
+import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.res.TypedArray;
 import android.content.res.XmlResourceParser;
@@ -23,6 +31,7 @@ import android.database.SQLException;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 import android.net.Uri;
+import android.preference.PreferenceManager;
 import android.text.TextUtils;
 import android.util.AttributeSet;
 import android.util.Log;
@@ -148,6 +157,9 @@ public class LauncherProvider extends ContentProvider {
                 return j;
             }
             
+            /*
+             * 得到属性里的内容
+             */
             String getString(int i){
                 String string;
                 if (mTypedArray == null) {
@@ -158,26 +170,32 @@ public class LauncherProvider extends ContentProvider {
                 return string;
             }
             
+            /*
+             * 回收数组
+             */
             void recycle(){
                 if (mTypedArray != null)
                     mTypedArray.recycle();
             }
             
-            public FakedTypedArray(Object object, int ai[]) {
-                super();
-                if (!(object instanceof XmlResourceParser)) {
+            public FakedTypedArray(AttributeSet aSet, int ai[]) {
+                
+                // 如果aSet不是Xml parser的类型，即XML非手机内存储的文件，跳转至  // MK : 201402251535 - default_workspace.xml
+                if (!(aSet instanceof XmlResourceParser)) {
                     mValues = new String[ai.length];
-                    mSet = (AttributeSet)object;
+                    mSet = aSet;
                     for (int i = 0; i < mSet.getAttributeCount(); i++) {
                         String string = mSet.getAttributeName(i);
                         string = string.substring("launcher:".length(), string.length());
+                        
+                        // 解析XML文件的属性， 此需要与attrs.xml中的<declare-styleable name="Favorite">次序一致
                         if (!"className".equals(string))
                         {
                             if (!"packageName".equals(string))
                             {
-                                if (!"screen".equals(string))
+                                if (!"container".equals(string))
                                 {
-                                    if (!"container".equals(string))
+                                    if (!"screen".equals(string))
                                     {
                                         if (!"x".equals(string))
                                         {
@@ -200,66 +218,67 @@ public class LauncherProvider extends ContentProvider {
                                                                             if (!"retained".equals(string))
                                                                             {
                                                                                 if ("presets_container".equals(string))
-                                                                                    mValues[14] = mSet.getAttributeValue(i);
+                                                                                    mValues[R.styleable.Favorite_presets_container] = mSet.getAttributeValue(i);
                                                                             } else
                                                                             {
-                                                                                mValues[13] = mSet.getAttributeValue(i);
+                                                                                mValues[R.styleable.Favorite_retained] = mSet.getAttributeValue(i);
                                                                             }
                                                                         } else
                                                                         {
-                                                                            mValues[12] = mSet.getAttributeValue(i);
+                                                                            mValues[R.styleable.Favorite_iconResource] = mSet.getAttributeValue(i);
                                                                         }
                                                                     } else
                                                                     {
-                                                                        mValues[11] = mSet.getAttributeValue(i);
+                                                                        mValues[R.styleable.Favorite_action] = mSet.getAttributeValue(i);
                                                                     }
                                                                 } else
                                                                 {
-                                                                    mValues[10] = mSet.getAttributeValue(i);
+                                                                    mValues[R.styleable.Favorite_uri] = mSet.getAttributeValue(i);
                                                                 }
                                                             } else
                                                             {
-                                                                mValues[9] = mSet.getAttributeValue(i);
+                                                                mValues[R.styleable.Favorite_title] = mSet.getAttributeValue(i);
                                                             }
                                                         } else
                                                         {
-                                                            mValues[8] = mSet.getAttributeValue(i);
+                                                            mValues[R.styleable.Favorite_icon] = mSet.getAttributeValue(i);
                                                         }
                                                     } else
                                                     {
-                                                        mValues[7] = mSet.getAttributeValue(i);
+                                                        mValues[R.styleable.Favorite_spanY] = mSet.getAttributeValue(i);
                                                     }
                                                 } else
                                                 {
-                                                    mValues[6] = mSet.getAttributeValue(i);
+                                                    mValues[R.styleable.Favorite_spanX] = mSet.getAttributeValue(i);
                                                 }
                                             } else
                                             {
-                                                mValues[5] = mSet.getAttributeValue(i);
+                                                mValues[R.styleable.Favorite_y] = mSet.getAttributeValue(i);
                                             }
                                         } else
                                         {
-                                            mValues[4] = mSet.getAttributeValue(i);
+                                            mValues[R.styleable.Favorite_x] = mSet.getAttributeValue(i);
                                         }
                                     } else
                                     {
-                                        mValues[3] = mSet.getAttributeValue(i);
+                                        mValues[R.styleable.Favorite_screen] = mSet.getAttributeValue(i);
                                     }
                                 } else
                                 {
-                                    mValues[2] = mSet.getAttributeValue(i);
+                                    mValues[R.styleable.Favorite_container] = mSet.getAttributeValue(i);
                                 }
                             } else
                             {
-                                mValues[1] = mSet.getAttributeValue(i);
+                                mValues[R.styleable.Favorite_packageName] = mSet.getAttributeValue(i);
                             }
                         } else
                         {
-                            mValues[0] = mSet.getAttributeValue(i);
+                            mValues[R.styleable.Favorite_className] = mSet.getAttributeValue(i);
                         }
                     }
                 } else {
-                    mTypedArray = mContext.obtainStyledAttributes((AttributeSet)object, ai);
+                    // MK : 201402251535 - default_workspace.xml
+                    mTypedArray = mContext.obtainStyledAttributes(aSet, ai);
                 }
             }
         };
@@ -286,7 +305,6 @@ public class LauncherProvider extends ContentProvider {
             if (mMaxId == -1) {
                 mMaxId = initializeMaxId(getWritableDatabase());
             }
-            
         }
         
         private void sendAppWidgetResetNotify() {
@@ -294,22 +312,193 @@ public class LauncherProvider extends ContentProvider {
             resolver.notifyChange(CONTENT_APPWIDGET_RESET_URI, null);
         }
         
+        private boolean addAppShortcut(SQLiteDatabase db, 
+                ContentValues values, 
+                FakedTypedArray array, 
+                PackageManager pack, Intent intent){
+            String packageName;
+            String className;
+            ActivityInfo activityinfo;
+            
+            if (array != null) {
+                packageName = array.getString(R.styleable.Favorite_packageName);
+                className = array.getString(R.styleable.Favorite_className);
+            }else {
+                packageName = intent.getComponent().getPackageName();
+                className = intent.getComponent().getClassName();
+            }
+            try {
+                ComponentName cn;
+                try {
+                    cn = new ComponentName(packageName, className);
+                    activityinfo = pack.getActivityInfo(cn, 0);
+                } catch (PackageManager.NameNotFoundException nnfe){
+                    String[] packages = pack.currentToCanonicalPackageNames(new String[] {packageName});
+                    cn = new ComponentName(packages[0], className);
+                    activityinfo = pack.getActivityInfo(cn, 0);
+                }
+                
+                intent.setComponent(cn);
+                intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK |
+                        Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+                values.put(Favorites.INTENT, intent.toUri(0));
+                values.put(Favorites.TITLE, activityinfo.loadLabel(pack).toString());
+                values.put(Favorites.ITEM_TYPE, Favorites.ITEM_TYPE_APPLICATION);
+                values.put(Favorites.SPANX, 1);
+                values.put(Favorites.SPANY, 1);
+                db.insert(TABLE_FAVORITES, null, values);
+
+            } catch (PackageManager.NameNotFoundException e) {
+                Log.w(TAG, "MK : Unable to add favorite: " + packageName +
+                        "/" + className, e);
+                return false;
+            }
+            return true;
+        }
+        
+        private boolean addClockWidget(SQLiteDatabase db, ContentValues values){
+            return true;
+        }
+        
+        private boolean addAppWidget(SQLiteDatabase db, 
+                ContentValues values, 
+                ComponentName name, int i, int j){
+            boolean allocatedAppWidgets = false;
+            
+            AppWidgetManager appWidgetManager = AppWidgetManager.getInstance(mContext);
+            
+            try {
+                int appWidgetId = mAppWidgetHost.allocateAppWidgetId();
+                
+                values.put(Favorites.ITEM_TYPE, Integer.valueOf(Favorites.ITEM_TYPE_APPWIDGET));
+                values.put(Favorites.SPANX, Integer.valueOf(i));
+                values.put(Favorites.SPANY, Integer.valueOf(j));
+                values.put(Favorites.APPWIDGET_ID, Integer.valueOf(appWidgetId));
+                db.insert(TABLE_FAVORITES, null, values);
+                allocatedAppWidgets = true;
+                appWidgetManager.bindAppWidgetIdIfAllowed(appWidgetId, name);
+                
+            } catch (RuntimeException ex) {
+                Log.e(TAG, "MK : Problem allocating appWidgetId", ex);
+            }
+            
+            return allocatedAppWidgets;
+        }
+        
+        private boolean addAppWidget(SQLiteDatabase db, 
+                ContentValues values, 
+                FakedTypedArray array, 
+                PackageManager pack){
+            String packageName = array.getString(R.styleable.Favorite_packageName);
+            String className = array.getString(R.styleable.Favorite_className);
+            
+            if (packageName == null || className == null) {
+                return false;
+            }
+
+            boolean hasPackage = true;
+            
+            ComponentName cn = new ComponentName(packageName, className);
+            
+            try {
+                pack.getReceiverInfo(cn, 0);
+            } catch (Exception e) {
+                String[] packages = pack.currentToCanonicalPackageNames(
+                        new String[] { packageName });
+                cn = new ComponentName(packages[0], className);
+                try {
+                    pack.getReceiverInfo(cn, 0);
+                } catch (Exception e1) {
+                    hasPackage = false;
+                }
+            }
+            
+            if (hasPackage)
+                hasPackage = addAppWidget(db, values, cn, array.getInt(R.styleable.Favorite_spanX, 0), array.getInt(R.styleable.Favorite_spanY, 0));
+            else
+                hasPackage = false;
+            return hasPackage;
+        }
+        
+        private boolean addFolder(SQLiteDatabase db, 
+                ContentValues values, FakedTypedArray array){
+            return true;
+        }
+        
+        private boolean addGadget(SQLiteDatabase db, 
+                ContentValues values, int i){
+            return true;
+        }
+        
+        private ComponentName getProviderInPackage(String packageName) {
+            AppWidgetManager appWidgetManager = AppWidgetManager.getInstance(mContext);
+            List<AppWidgetProviderInfo> providers = appWidgetManager.getInstalledProviders();
+            if (providers == null) return null;
+            final int providerCount = providers.size();
+            for (int i = 0; i < providerCount; i++) {
+                ComponentName provider = providers.get(i).provider;
+                if (provider != null && provider.getPackageName().equals(packageName)) {
+                    return provider;
+                }
+            }
+            return null;
+        }
+        
+        private ComponentName getSearchWidgetProvider() {
+            SearchManager searchManager =
+                    (SearchManager) mContext.getSystemService(Context.SEARCH_SERVICE);
+            ComponentName searchComponent = searchManager.getGlobalSearchActivity();
+            if (searchComponent == null) return null;
+            return getProviderInPackage(searchComponent.getPackageName());
+        }
+        
+        private boolean addSearchWidget(SQLiteDatabase db, 
+                ContentValues values){
+            ComponentName cn = getSearchWidgetProvider();
+            return addAppWidget(db, values, cn, 4, 1);
+        }
+        
+        private boolean addUriShortcut(SQLiteDatabase db, 
+                ContentValues values, FakedTypedArray array)        {
+            return true;
+        }
+        
+        /**************************
+         * 功能：  读取桌面的默认布局 
+         * 描述：  如果/data/media/customized目录下存有default_workspace.xml则以此为默认的布局，
+         *      否则使用R.xml.default_workspace为默认布局
+         * 关键：  1. XmlPullParser解析XML文件
+         *      2. 使用FileReader打开手机内存中的XML文件
+         *      3. XmlUtils XML工具类的使用
+         */
         private int loadFavorites(SQLiteDatabase db){
-            int i = 0;
+            int iAdd = 0;
             Intent intent = new Intent(Intent.ACTION_MAIN, null);
             intent.addCategory(Intent.CATEGORY_LAUNCHER);
             ContentValues contentValues = new ContentValues();
             PackageManager packageManager = mContext.getPackageManager();
             
             try {
-                FileReader fileReader = new FileReader(ResConfig.getCustomizedDefaultWorkspaceXmlPath());
-                
+                // 解析WORKSPACE
                 XmlPullParser xmlPullParser = XmlPullParserFactory.newInstance().newPullParser();
                 if (xmlPullParser == null) {
+                    // 如果NEW资源失败则直接使用默认WORKSPACE
                     xmlPullParser = mContext.getResources().getXml(ResConfig.getDefaultWorkspaceXmlId());
+                }else {
+                    try {
+                        // 从文件中读取default workspace 的布局, 路径为/data/media/customized/default_workspace.xml
+                        FileReader fileReader = new FileReader(ResConfig.getCustomizedDefaultWorkspaceXmlPath());
+                        xmlPullParser.setInput(fileReader);
+                    } catch (FileNotFoundException fileNotFoundException) {
+                        Log.w(TAG, "MK : Got exception parsing favorites.", fileNotFoundException);
+                        xmlPullParser = mContext.getResources().getXml(ResConfig.getDefaultWorkspaceXmlId());
+                    }
                 }
-                xmlPullParser.setInput(fileReader);
+                
+                // 由资源xml文件获得的各属性接口类
                 AttributeSet attributeSet = Xml.asAttributeSet(xmlPullParser);
+                
+                // 遍析favorites中的内容，减少不必要的存储
                 XmlUtils.beginDocument(xmlPullParser, TAG_FAVORITES);
                 int depth = xmlPullParser.getDepth();
                 
@@ -319,17 +508,65 @@ public class LauncherProvider extends ContentProvider {
                     if (type != XmlPullParser.START_TAG) {
                         continue;
                     }
+                    
+                    boolean added = false;
                     final String name = xmlPullParser.getName();
+                    String containerString;
                     if (LOGD) {
                         Log.w(TAG, "MK : LoadFavorites: name = " + name);
                     }
                     
+                    // 将读取的XML属性值存入TypedArray数组中
                     FakedTypedArray fakedTypedArray = new FakedTypedArray(attributeSet, R.styleable.Favorite);
                     
+                    // If we are adding to the hotseat, the screen is used as the position in the
+                    // hotseat. This screen can't be at position 0 because AllApps is in the
+                    // zeroth position.
+                    
+                    // if (container == LauncherSettings.Favorites.CONTAINER_HOTSEAT) {
+                    // throw new RuntimeException("Invalid screen position for hotseat item");
+                    // }
+
+                    // 将原存储的数据清除，重新写入数据
                     contentValues.clear();
+                    containerString = fakedTypedArray.getString(R.styleable.Favorite_container);
+                    long container = LauncherSettings.Favorites.CONTAINER_DESKTOP;
+                    if (!TextUtils.isEmpty(containerString)) {
+                        container = Integer.parseInt(containerString);
+                    }
                     
-                    String screen = fakedTypedArray.getString(R.styleable.Favorite_screen);
+                    if (container == LauncherSettings.Favorites.CONTAINER_DESKTOP) {
+                        containerString = String.valueOf(container);
+                        contentValues.put(LauncherSettings.Favorites.SCREEN, fakedTypedArray.getString(R.styleable.Favorite_screen));
+                    }
+                                       
+                    if (container < 0) {
+                        contentValues.put(LauncherSettings.Favorites.CELLX, fakedTypedArray.getString(R.styleable.Favorite_x));
+                        contentValues.put(LauncherSettings.Favorites.CELLY, fakedTypedArray.getString(R.styleable.Favorite_y));
+                    }
+                    contentValues.put(LauncherSettings.Favorites.CONTAINER, containerString);
                     
+                    if ("default".equals(name)) {
+                        Editor editor = PreferenceManager.getDefaultSharedPreferences(mContext).edit();
+                        editor.putLong("pref_default_screen", contentValues.getAsLong("screen").longValue());
+                        editor.commit();
+                    }
+                    if (TAG_FAVORITE.equals(name)) {
+                        added = addAppShortcut(db, contentValues, fakedTypedArray, packageManager, intent);
+                    } else if (TAG_SEARCH.equals(name)) {
+                        added = addSearchWidget(db, contentValues);
+                    } else if (TAG_CLOCK.equals(name)) {
+                        added = addClockWidget(db, contentValues);
+                    } else if (TAG_APPWIDGET.equals(name)) {
+                        added = addAppWidget(db, contentValues, fakedTypedArray, packageManager);
+                    } else if (TAG_SHORTCUT.equals(name)) {
+                        added = addUriShortcut(db, contentValues, fakedTypedArray);
+                    } else if (TAG_FOLDER.equals(name)) {
+                        added = addFolder(db, contentValues, fakedTypedArray);
+                    }
+                    
+                    if (added) iAdd++;
+                    fakedTypedArray.recycle();
                 }
                 
             } catch (XmlPullParserException xmlPullParserException) {
@@ -338,7 +575,7 @@ public class LauncherProvider extends ContentProvider {
                 Log.w(TAG, "MK : Got exception parsing favorites.", ioException);
             }
             
-            return i;
+            return iAdd;
         }
         
         private int loadPresetsApps(SQLiteDatabase db){

@@ -55,13 +55,24 @@ public class ResConfig {
         if ("4x4".equals(cellSize)){
             cellSize = "";
         }
-            
-        mDefaultWorkspaceName = stringbuilder.append(i).toString();
-        mCustomizedDefaultWorkspacePath = (new StringBuilder()).append("/data/media/customized/").append(mDefaultWorkspaceName).append(".xml").toString();
-        mDefaultWorkspaceName = (new StringBuilder()).append(context.getPackageName()).append(":xml/").append(mDefaultWorkspaceName).toString();
+        
+        
+        // 默认WORKSPACE 的XML名称
+        mDefaultWorkspaceName = stringbuilder.append(cellSize).toString();
+        
+        mCustomizedDefaultWorkspacePath = (new StringBuilder()).append("/data/media/customized/")
+                .append(mDefaultWorkspaceName).append(".xml").toString();
+        
+        mDefaultWorkspaceName = (new StringBuilder()).append(context.getPackageName())
+                .append(":xml/").append(mDefaultWorkspaceName).toString();
         mDefaultWorkspaceId = resources.getIdentifier(mDefaultWorkspaceName, null, null);
-        if (mDefaultWorkspaceId == 0)
+        
+        // 如果默认的WORKSPACE没有找到，则使用default_workspace_none代替
+        if (mDefaultWorkspaceId == 0){
             mDefaultWorkspaceId = R.xml.default_workspace_none;
+        }
+        
+        
         mWidgetCellMeasureWidth = resources.getDimensionPixelSize(R.dimen.workspace_widget_cell_measure_width);
         mWidgetCellMeasureHeight = resources.getDimensionPixelSize(R.dimen.workspace_widget_cell_measure_height);
         mWidgetCellMinWidth = resources.getDimensionPixelSize(R.dimen.workspace_widget_cell_min_width);

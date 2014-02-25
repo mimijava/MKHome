@@ -117,6 +117,10 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity 
+            android:label="@string/preferences_title" 
+            android:name="cn.minking.launcher.LauncherPreferenceActivity" >
+        </activity>
         <receiver 
             android:name="cn.minking.launcher.InstallShortcutReceiver"
             android:permission="com.android.launcher.permission.INSTALL_SHORTCUT">
