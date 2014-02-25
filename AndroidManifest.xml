@@ -106,7 +106,6 @@
             android:name="cn.minking.launcher.Launcher"
             android:clearTaskOnLaunch="true"
             android:stateNotNeeded="true"
-            android:theme="@style/Theme"
             android:launchMode="singleTask"
             android:screenOrientation="sensorPortrait"
             android:configChanges="mcc|mnc|keyboard|keyboardHidden|navigation|orientation|uiMode|screenSize">

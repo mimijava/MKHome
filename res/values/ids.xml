@@ -1,12 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-	<item type="id" name="drag_layer"></item>
-	<item type="id" name="screen"></item>
-	<item type="id" name="workspace"></item>
-	<item type="id" name="drag_layer_background"></item>
-	<item type="id" name="hot_seats"></item>
-	<item type="id" name="delete_zone"></item>
-	<item type="id" name="trash"></item>
-	<item type="id" name="editing_tips"></item>
-	<item type="id" name="default_position"></item>
+	<item type="id" name="drag_layer">false</item>
+	<item type="id" name="screen">false</item>
+	<item type="id" name="workspace">false</item>
 </resources>

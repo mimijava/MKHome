@@ -4,75 +4,15 @@
     android:layout_width="fill_parent" 
     android:layout_height="fill_parent"
     xmlns:android="http://schemas.android.com/apk/res/android">
-    
-    <!-- 整个桌面的显示，包括背景，不包括小图标状态栏 -->
-    <FrameLayout android:id="@id/screen" 
+    <FrameLayout 
+        android:id="@id/screen"
         android:layout_width="fill_parent"
         android:layout_height="fill_parent">
-
-        <!-- 桌面背景 -->
-        <cn.minking.launcher.Background android:id="@id/drag_layer_background"
-            android:layout_width="fill_parent"
-            android:layout_height="fill_parent" />
-        
-        <!-- 所有显示区 -->
         <cn.minking.launcher.Workspace android:id="@id/workspace"
             android:paddingTop="@dimen/status_bar_height"
             android:layout_width="fill_parent"
             android:layout_height="fill_parent"
             android:layout_marginBottom="@dimen/workspace_margin_bottom"
             />
-        
-        <!-- 桌面HOTSEAT区 -->
-        <cn.minking.launcher.HotSeats android:id="@id/hot_seats" 
-            android:gravity="center"
-            android:layout_gravity="bottom"
-            android:background="@drawable/hotseat_background"
-            android:paddingLeft="@dimen/hotseats_padding_side"
-            android:paddingRight="@dimen/hotseats_padding_side"
-            android:paddingTop="@dimen/hotseats_padding_top"
-            android:paddingBottom="@dimen/hotseats_padding_bottom"
-            android:animationCache="false"
-            android:layout_width="fill_parent"
-            android:layout_height="wrap_content"
-            />
-        
-        <!-- 删除区 -->
-        <cn.minking.launcher.DeleteZone android:id="@id/delete_zone" 
-            android:layout_gravity="top"
-            android:background="@null"
-            android:orientation="horizontal"
-            android:visibility="invisible"
-            android:layout_width="fill_parent" 
-            android:layout_height="wrap_content"
-            >
-            <!-- 动画显示删除图标 -->
-            <ImageView android:id="@id/trash" 
-                android:background="@drawable/delete_zone_selector" 
-                android:visibility="invisible" 
-                android:layout_width="fill_parent" 
-                android:layout_height="wrap_content" 
-                android:src="@drawable/delete_zone_01" 
-                android:scaleType="center" />
-            <!-- 删除提示 -->
-            <TextView android:id="@id/editing_tips"
-                android:layout_gravity="top|center"  
-                android:paddingTop="13.0dip" 
-                android:layout_width="wrap_content" 
-                android:layout_height="wrap_content" 
-                android:text="@string/editing_tips" 
-                style="@style/WorkspaceIconTitle.notification" />
-		</cn.minking.launcher.DeleteZone>
     </FrameLayout>
-    
-    <!-- 小图标状态栏显示区域 -->
-    <FrameLayout 
-        android:paddingTop="@dimen/status_bar_height" 
-        android:layout_width="1.0px" 
-        android:layout_height="fill_parent">
-        <FrameLayout android:id="@id/default_position" 
-            android:layout_width="1.0px" 
-            android:layout_height="fill_parent" />
-    </FrameLayout>
-    
 </cn.minking.launcher.DragLayer>
