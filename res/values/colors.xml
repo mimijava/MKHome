@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+	<color name="icon_title_text">#ffffffff</color>
+	<color name="icon_title_text_shadow">#ff000000</color>
+	<color name="preview_background">#99000000</color>
+</resources>
