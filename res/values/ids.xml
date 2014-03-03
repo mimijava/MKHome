@@ -9,4 +9,16 @@
 	<item type="id" name="trash"></item>
 	<item type="id" name="editing_tips"></item>
 	<item type="id" name="default_position"></item>
+	<item type="id" name="icon_folder_creation_bg"></item>
+	<item type="id" name="icon_shadow_layer"></item>
+	<item type="id" name="icon_container"></item>
+	<item type="id" name="icon_icon"></item>
+	<item type="id" name="icon_title"></item>
+	<item type="id" name="icon_tile"></item>
+	<item type="id" name="icon_msg"></item>
+	<item type="id" name="cell_layout"></item>
+	<item type="id" name="background_container"></item>
+	<item type="id" name="background"></item>
+	<item type="id" name="delete_btn"></item>
+	<item type="id" name="new_btn"></item>
 </resources>

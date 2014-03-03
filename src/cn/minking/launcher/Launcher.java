@@ -1,14 +1,19 @@
 package cn.minking.launcher;
 /**
- * 作者： minking
- * 描述：MKHome的主入口， 装载Launcher.xml及LauncherModel的调用
+ * 作者：      minking
+ * 文件名称:    LauncherApplication.java
+ * 创建时间：    2013-XX-XX
+ * 描述：      MKHome的主入口， 装载Launcher.xml及LauncherModel的调用
  * 更新内容
  * ====================================================================================
  * 2014-02-18： 实现LauncherModel读取手机中的APP及WIDGET
  * ====================================================================================
  */
+import java.io.FileDescriptor;
+import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 
 import cn.minking.launcher.gadget.GadgetInfo;
 import cn.minking.launcher.upsidescene.SceneData;
@@ -22,6 +27,7 @@ import android.util.Log;
 import android.view.Display;
 import android.view.Surface;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.view.View.OnClickListener;
 import android.view.View.OnLongClickListener;
@@ -30,13 +36,22 @@ import android.view.WindowManager;
 public class Launcher extends Activity implements OnClickListener,
         OnLongClickListener, LauncherModel.Callbacks{
     static final private String LTAG = "ZwLauncher";
-    private Workspace mWorkspace = null;
-    private DragLayer mDragLayer = null;
-    private DragController mDragController = null;
-    private LauncherModel mModel = null;
+    private Workspace mWorkspace;
+    private DragLayer mDragLayer;
+    private DragController mDragController;
+    private LauncherModel mModel;
+    
+    // HOTSEAT区域
+    private HotSeats mHotSeats;
+    private static HashMap mFolders = new HashMap();
     private static boolean mIsHardwareAccelerated = false;
-    private IconCache mIconCache = null;
+    private IconCache mIconCache;
     private Point mTmpPoint = new Point();
+    
+    // 桌面背景
+    private Background mDragLayerBackground;
+    
+    static final ArrayList<String> sDumpLogs = new ArrayList<String>();
     
     static final int APPWIDGET_HOST_ID = 1024;
     
@@ -48,12 +63,19 @@ public class Launcher extends Activity implements OnClickListener,
     private boolean mWaitingForResult;
     private boolean mOnResumeNeedsLoad;
 
+    /// M: WORKSPACE是否处于装载
+    private boolean mWorkspaceLoading;
+    
     /// M: 用于强制重载WORKSPACE
     private boolean mIsLoadingWorkspace;
     
 
     /// M: 跟踪用户是否离开Launcher的行为状态
     private static boolean sPausedFromUserAction = false;
+    
+    public Launcher(){
+        mWorkspaceLoading = true;
+    }
     
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -66,7 +88,7 @@ public class Launcher extends Activity implements OnClickListener,
         LauncherApplication launcherApplication = (LauncherApplication)getApplication();
         mModel = launcherApplication.setLauncher(this);
         mIconCache = launcherApplication.getIconCache();
-        mDragController = new DragController();
+        mDragController = new DragController(this);
         registerContentObservers();
         setWallpaperDimension();
         
@@ -124,6 +146,20 @@ public class Launcher extends Activity implements OnClickListener,
         wallpaperManager.suggestDesiredDimensions(width * 2, height);
     }
     
+    /**
+     * 功能： 滑动更新墙纸
+     */
+    public void updateWallpaperOffset(float xStep, float yStep, float xOffset, float yOffset){
+        mDragLayer.updateWallpaperOffset(xStep, yStep, xOffset, yOffset);
+    }
+    
+    /**
+     * 功能： 滑动更新墙纸动画
+     */
+    public void updateWallpaperOffsetAnimate(float xStep, float yStep, float xOffset, float yOffset){
+        mDragLayer.updateWallpaperOffsetAnimate(xStep, yStep, xOffset, yOffset);
+    }
+    
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         // TODO Auto-generated method stub
@@ -145,12 +181,14 @@ public class Launcher extends Activity implements OnClickListener,
 
     @Override
     protected void onResume() {
+        super.onResume();
         
+        // 显示桌面背景
+        mDragLayer.updateWallpaper();        
         mPaused = false;
         
         sPausedFromUserAction = false;
         
-        super.onResume();
     }
 
     @Override
@@ -168,6 +206,7 @@ public class Launcher extends Activity implements OnClickListener,
     @Override
     protected void onStop() {
         super.onStop();
+        mDragLayer.updateWallpaperOffset();
     }
 
     @Override
@@ -191,8 +230,20 @@ public class Launcher extends Activity implements OnClickListener,
     }
 
     private void setupViews() {
+        // Drag 控制器
         DragController dragController = mDragController;
+        
+        // Drag 层
         mDragLayer = (DragLayer)findViewById(R.id.drag_layer);
+        mDragLayerBackground = (Background)findViewById(R.id.drag_layer_background);
+        mDragLayer.setDragController(dragController);
+        mDragLayer.setLauncher(this);
+        
+        // HOTSEAT
+        mHotSeats = (HotSeats)mDragLayer.findViewById(R.id.hot_seats);
+        mHotSeats.setLauncher(this);
+        mHotSeats.setDragController(dragController);
+        
         mWorkspace = (Workspace)mDragLayer.findViewById(R.id.workspace);
         Workspace workspace = mWorkspace;
         workspace.setHapticFeedbackEnabled(false);
@@ -201,6 +252,105 @@ public class Launcher extends Activity implements OnClickListener,
         workspace.setLauncher(this);
     }
 
+    /**
+     * 功能：  获取Drag控制器
+     * @return
+     */
+    public DragController getDragController(){
+        return mDragController;
+    }
+    
+    /**
+     * 功能：  获取拖动的图层
+     * @return
+     */
+    public DragLayer getDragLayer(){
+        return mDragLayer;
+    }
+    private FolderIcon createFolderIcon(ViewGroup viewgroup, FolderInfo folderinfo){
+        return FolderIcon.fromXml(R.layout.folder_icon, this, viewgroup, folderinfo);
+    }
+
+    public FolderIcon getFolderIcon(FolderInfo folderinfo){
+        FolderIcon foldericon = null;
+        if (folderinfo != null)
+            if (folderinfo.container != LauncherSettings.Favorites.CONTAINER_DESKTOP)
+            {
+                if (folderinfo.container == LauncherSettings.Favorites.CONTAINER_HOTSEAT)
+                    foldericon = (FolderIcon)mHotSeats.getItemIcon(folderinfo);
+            } else {
+                foldericon = (FolderIcon)mWorkspace.findViewWithTag(folderinfo);
+            }
+        return foldericon;
+    }
+    
+    private ShortcutIcon createShortcutIcon(ViewGroup viewgroup, ShortcutInfo shortcutinfo){
+        return ShortcutIcon.fromXml(R.layout.application, this, viewgroup, shortcutinfo);
+    }
+    
+    public ItemIcon createItemIcon(ViewGroup viewgroup, ItemInfo iteminfo){
+        ItemIcon itemIcon;
+        if (!(iteminfo instanceof ShortcutInfo) 
+                && (iteminfo instanceof FolderInfo)) {
+            itemIcon = createFolderIcon(viewgroup, (FolderInfo)iteminfo);
+        }else {
+            itemIcon = createShortcutIcon(viewgroup, (ShortcutInfo)iteminfo);
+        }
+        if (itemIcon != null) {
+            itemIcon.setOnClickListener(this);
+        }
+        return itemIcon;
+    }
+    
+    public void addItem(ItemInfo iteminfo, boolean flag){
+        if (iteminfo.container != LauncherSettings.Favorites.CONTAINER_HOTSEAT){
+            if (!(iteminfo instanceof ShortcutInfo))
+            {
+                if (iteminfo instanceof FolderInfo)
+                    mWorkspace.addInScreen(createItemIcon(mWorkspace.getCurrentCellLayout(), 
+                            iteminfo), iteminfo.screenId, iteminfo.cellX, iteminfo.cellY, 1, 1, false);
+            } else {
+                addShortcut((ShortcutInfo)iteminfo, flag);
+            }
+        }else {
+            // 添加HOTSEAT
+            mHotSeats.pushItem(iteminfo);
+        }
+    }
+    
+    public FolderIcon getParentFolderIcon(ShortcutInfo shortcutinfo){
+        return getFolderIcon(getParentFolderInfo(shortcutinfo));
+    }
+    
+    public FolderInfo getParentFolderInfo(ShortcutInfo shortcutinfo){
+        FolderInfo folderinfo;
+        if (shortcutinfo.container == LauncherSettings.Favorites.CONTAINER_DESKTOP 
+                || shortcutinfo.container == LauncherSettings.Favorites.CONTAINER_HOTSEAT)
+            folderinfo = null;
+        else
+            folderinfo = (FolderInfo)mFolders.get(Long.valueOf(shortcutinfo.container));
+        return folderinfo;
+    }
+    
+    void addShortcut(ShortcutInfo shortcutinfo){
+        addShortcut(shortcutinfo, false);
+    }
+
+    void addShortcut(ShortcutInfo shortcutinfo, boolean flag){
+        if (getParentFolderIcon(shortcutinfo) == null){
+            //mWorkspace.addInScreen(createItemIcon(mWorkspace.getCurrentCellLayout(), shortcutinfo), shortcutinfo.screenId, shortcutinfo.cellX, shortcutinfo.cellY, 1, 1, flag);
+        } else {
+            FolderInfo folderinfo = getParentFolderInfo(shortcutinfo);
+            if (folderinfo == null || !(folderinfo instanceof FolderInfo)){
+                Log.e("Launcher", (new StringBuilder()).append("Can't find user folder of id ").append(shortcutinfo.container).toString());
+            } else {
+                folderinfo.add(shortcutinfo);
+                folderinfo.notifyDataSetChanged();
+                //mApplicationsMessage.updateFolderMessage(folderinfo);
+            }
+        }
+    }
+    
     @Override
     public void bindAppWidget(LauncherAppWidgetInfo launcherappwidgetinfo) {
         // TODO Auto-generated method stub
@@ -208,9 +358,18 @@ public class Launcher extends Activity implements OnClickListener,
     }
 
     @Override
-    public void bindAppsAdded(ArrayList arraylist) {
-        // TODO Auto-generated method stub
-        
+    public void bindAppsAdded(final ArrayList arraylist) {
+        mWorkspace.post(new Runnable() {
+            final ArrayList apps = arraylist;
+            @Override
+            public void run() {
+                Iterator<ShortcutInfo> iterator = apps.iterator();
+                while (iterator.hasNext()) {
+                    ShortcutInfo shortcutInfo = iterator.next();
+                    addItem(shortcutInfo, false);
+                }
+            }
+        });
     }
 
     @Override
@@ -257,8 +416,8 @@ public class Launcher extends Activity implements OnClickListener,
 
     @Override
     public void finishBindingSavedItems() {
-        // TODO Auto-generated method stub
-        
+        mWorkspaceLoading = false;
+        mHotSeats.finishBinding();
     }
 
     @Override
@@ -281,8 +440,7 @@ public class Launcher extends Activity implements OnClickListener,
 
     @Override
     public void startBinding() {
-        // TODO Auto-generated method stub
-        
+        mHotSeats.startBinding();
     }
 
     @Override
@@ -291,5 +449,13 @@ public class Launcher extends Activity implements OnClickListener,
         
     }
 
-    
+    @Override
+    public void dump(String prefix, FileDescriptor fd, PrintWriter writer, String[] args) {
+        super.dump(prefix, fd, writer, args);
+        writer.println(" ");
+        writer.println("Debug logs: ");
+        for (int i = 0; i < sDumpLogs.size(); i++) {
+            writer.println("  " + sDumpLogs.get(i));
+        }
+    }
 }

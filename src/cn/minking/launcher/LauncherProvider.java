@@ -1,8 +1,18 @@
 package cn.minking.launcher;
-
+/**
+ * 作者：      minking
+ * 文件名称:    LauncherProvider.java
+ * 创建时间：    2013
+ * 描述：  
+ * 更新内容
+ * ====================================================================================
+ * 20140228: 数据存储类
+ * ====================================================================================
+ */
 import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.xmlpull.v1.XmlPullParser;
@@ -17,6 +27,7 @@ import android.appwidget.AppWidgetProviderInfo;
 import android.content.ComponentName;
 import android.content.ContentProvider;
 import android.content.ContentResolver;
+import android.content.ContentUris;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
@@ -30,6 +41,7 @@ import android.database.Cursor;
 import android.database.SQLException;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
+import android.database.sqlite.SQLiteQueryBuilder;
 import android.net.Uri;
 import android.preference.PreferenceManager;
 import android.text.TextUtils;
@@ -57,21 +69,84 @@ public class LauncherProvider extends ContentProvider {
     static final String DEFAULT_WORKSPACE_RESOURCE_ID =
             "DEFAULT_WORKSPACE_RESOURCE_ID";
     
+    /// M: LOCK给数据库操作使用
+    private final Object mLock = new Object();
+    
     /// M: 保存场景数据
     private static DatabaseHelper sOpenHelper;
+    private ArrayList<CellScreen> mScreens;
     
-    private void sendNotify(Uri uri) {
-        String notify = uri.getQueryParameter(PARAMETER_NOTIFY);
-        if (notify == null || "true".equals(notify)) {
-            getContext().getContentResolver().notifyChange(uri, null);
+    
+    /*
+     * 查询数据库参数定义内部类
+     */
+    static class SqlArguments{
+        public final long id;
+        public final String args[];
+        public final String table;
+        public final String where;
+        
+        private String selectTable(String table){
+            return table;
+        }
+        
+        /**
+         * 功能： 根据URI得到表名
+         * @param uri
+         */
+        SqlArguments(Uri uri) {
+            // 如果SQL语句的条件为1，解析出table
+            if (uri.getPathSegments().size() == 1) {
+                table = selectTable((String)uri.getPathSegments().get(0));
+                where = null;
+                args = null;
+                id = -1L;
+                return;
+            }else {
+                throw new IllegalArgumentException((new StringBuilder()).append("Invalid URI: ").append(uri).toString());
+            }
+        }
+        
+        SqlArguments(Uri uri, String selection, String selectionArgs[]){
+            // 如果SQL语句的条件为1，解析出table
+            if (uri.getPathSegments().size() == 1){
+                table = selectTable((String)uri.getPathSegments().get(0));
+                where = selection;
+                args = selectionArgs;
+                id = -1L;
+            } else {
+                // 如果SQL语句的条件多于2个，解析出table及 where
+                if (uri.getPathSegments().size() == 2) {
+                    if (TextUtils.isEmpty(selection)) {
+                        table = selectTable(uri.getPathSegments().get(0));
+                        id = ContentUris.parseId(uri);
+                        if (!LauncherProvider.TABLE_FAVORITES.equals(table))
+                            where = (new StringBuilder()).append("screens._id=").append(id).toString();
+                        else
+                            where = (new StringBuilder()).append("favorites._id=").append(id).toString();
+                        args = null;
+                    }else {
+                        throw new UnsupportedOperationException((new StringBuilder()).append("WHERE clause not supported: ").append(uri).toString());
+                    }
+                }else {
+                    throw new IllegalArgumentException((new StringBuilder()).append("Invalid URI: ").append(uri).toString());
+                }
+            }
         }
     }
     
+    /**
+     * 功能： Launcher Provider创建
+     */
     @Override
-    public int delete(Uri arg0, String arg1, String[] arg2) {
-        // TODO Auto-generated method stub
-        return 0;
+    public boolean onCreate() {
+        resetDatabaseIfNeeded();
+        sOpenHelper = new DatabaseHelper(getContext());
+        ((LauncherApplication)getContext().getApplicationContext()).setLauncherProvider(this);
+        return true;
     }
+    
+    
 
     @Override
     public String getType(Uri uri) {
@@ -85,25 +160,62 @@ public class LauncherProvider extends ContentProvider {
         return null;
     }
 
+    /**
+     * 功能： 数据库删除
+     */
     @Override
-    public boolean onCreate() {
-        sOpenHelper = new DatabaseHelper(getContext());
-        ((LauncherApplication) getContext()).setLauncherProvider(this);
-        return true;
+    public int delete(Uri uri, String arg1, String[] arg2) {
+        // TODO Auto-generated method stub
+        return 0;
     }
-
+    
+    /**
+     * 功能： 数据库查询
+     */
     @Override
     public Cursor query(Uri uri, String[] projection, String selection,
             String[] selectionArgs, String sortOrder) {
-        // TODO Auto-generated method stub
-        return null;
+        Cursor cursor = null;
+        synchronized (mLock) {
+            // 解析SQL参数
+            SqlArguments sqlArguments = new SqlArguments(uri, selection, selectionArgs);
+            SQLiteQueryBuilder qb = new SQLiteQueryBuilder();
+            SQLiteDatabase db = sOpenHelper.getReadableDatabase();
+            
+            // 设置需要查询的标
+            qb.setTables(sqlArguments.table);
+            cursor = qb.query(db, projection, sqlArguments.where, sqlArguments.args, null, null, sortOrder);
+            cursor.setNotificationUri(getContext().getContentResolver(), uri);
+        }
+        
+        return cursor;
     }
 
+    /**
+     * 功能： 数据库更新
+     */
     @Override
     public int update(Uri uri, ContentValues values, String selection,
             String[] selectionArgs) {
         // TODO Auto-generated method stub
         return 0;
+    }
+    
+    private void sendNotify(Uri uri) {
+        String notify = uri.getQueryParameter(PARAMETER_NOTIFY);
+        if (notify == null || "true".equals(notify)) {
+            getContext().getContentResolver().notifyChange(uri, null);
+        }
+    }
+    
+    /**
+     * 功能： 重置数据库
+     */
+    private void resetDatabaseIfNeeded(){
+        if (sOpenHelper != null){
+            sOpenHelper.close();
+            mScreens = null;
+        }
     }
     
     synchronized public void loadDefaultFavoritesIfNecessary(int origWorkspaceResId){
@@ -128,6 +240,10 @@ public class LauncherProvider extends ContentProvider {
             sOpenHelper.updateSceneField(sOpenHelper.getWritableDatabase(), getContext().getString(R.string.scene_name_default));
             
         }
+    }
+    
+    public long generateNewId(){
+        return sOpenHelper.generateNewId();
     }
 
     static class DatabaseHelper extends SQLiteOpenHelper{
@@ -346,7 +462,10 @@ public class LauncherProvider extends ContentProvider {
                 values.put(Favorites.ITEM_TYPE, Favorites.ITEM_TYPE_APPLICATION);
                 values.put(Favorites.SPANX, 1);
                 values.put(Favorites.SPANY, 1);
-                db.insert(TABLE_FAVORITES, null, values);
+                long aa = db.insert(TABLE_FAVORITES, null, values);
+                if (aa != 0) {
+                    Log.w(TAG, "MK : Insert: " + aa);
+                }
 
             } catch (PackageManager.NameNotFoundException e) {
                 Log.w(TAG, "MK : Unable to add favorite: " + packageName +
@@ -374,7 +493,10 @@ public class LauncherProvider extends ContentProvider {
                 values.put(Favorites.SPANX, Integer.valueOf(i));
                 values.put(Favorites.SPANY, Integer.valueOf(j));
                 values.put(Favorites.APPWIDGET_ID, Integer.valueOf(appWidgetId));
-                db.insert(TABLE_FAVORITES, null, values);
+                long aa = db.insert(TABLE_FAVORITES, null, values);
+                if (aa != 0) {
+                    Log.w(TAG, "MK : Insert: " + aa);
+                }
                 allocatedAppWidgets = true;
                 appWidgetManager.bindAppWidgetIdIfAllowed(appWidgetId, name);
                 
@@ -652,6 +774,13 @@ public class LauncherProvider extends ContentProvider {
                 db.endTransaction();
             }
         }
+        public long generateNewId(){
+            if (mMaxId >= 0L){
+                mMaxId = 1L + mMaxId;
+                return mMaxId;
+            }else{
+                throw new RuntimeException("Error: max id was not initialized");
+            }
+        }       
     }
-
 }

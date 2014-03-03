@@ -1,5 +1,14 @@
 package cn.minking.launcher;
-
+/**
+ * 作者：      minking
+ * 文件名称:    ItemInfo.java
+ * 创建时间：    2013
+ * 描述：  
+ * 更新内容
+ * ====================================================================================
+ * 20140225: 图标 文件创建
+ * ====================================================================================
+ */
 import java.io.ByteArrayOutputStream;
 
 import android.content.ContentValues;
@@ -45,7 +54,7 @@ public class ItemInfo implements Cloneable {
     }
 
     @Override
-    public Object clone(){
+    public ItemInfo clone(){
         ItemInfo iteminfo;
         try
         {
@@ -84,32 +93,27 @@ public class ItemInfo implements Cloneable {
     }
     
     public void load(Cursor cursor){
-        long l = 0;
-        int i;
-        id = cursor.getLong(0);
+        id = cursor.getLong(LauncherModel.colToInt(ItemQuery.COL.ID));
         
-        if (!cursor.isNull(11))
-            i = cursor.getInt(11);
-        else
-            i = 0;
+        if (!cursor.isNull(LauncherModel.colToInt(ItemQuery.COL.CELLX))){
+            cellX = cursor.getInt(LauncherModel.colToInt(ItemQuery.COL.CELLX));
+        }
         
-        cellX = i;
-        if (!cursor.isNull(12))
-            l = cursor.getInt(12);
-        cellY = (int)l;
-        spanX = cursor.getInt(13);
-        spanY = cursor.getInt(14);
+        if (!cursor.isNull(LauncherModel.colToInt(ItemQuery.COL.CELLY))){
+            cellY = cursor.getInt(LauncherModel.colToInt(ItemQuery.COL.CELLX));
+        }
         
-        if (!cursor.isNull(10))
-            l = cursor.getLong(10);
-        else
-            l = 0L;
+        spanX = cursor.getInt(LauncherModel.colToInt(ItemQuery.COL.SPANX));
+        spanY = cursor.getInt(LauncherModel.colToInt(ItemQuery.COL.SPANY));
         
-        screenId = l;
-        itemType = cursor.getInt(8);
-        container = cursor.getLong(7);
-        launchCount = cursor.getInt(17);
-        itemFlags = cursor.getInt(19);
+        if (!cursor.isNull(LauncherModel.colToInt(ItemQuery.COL.SCREEN))){
+            screenId = cursor.getLong(LauncherModel.colToInt(ItemQuery.COL.SCREEN));
+        }
+
+        itemType = cursor.getInt(LauncherModel.colToInt(ItemQuery.COL.ITEMTYPE));
+        container = cursor.getLong(LauncherModel.colToInt(ItemQuery.COL.CONTAINER));
+        launchCount = cursor.getInt(LauncherModel.colToInt(ItemQuery.COL.LAUNCHERCOUNT));
+        itemFlags = cursor.getInt(LauncherModel.colToInt(ItemQuery.COL.ITEMFLAGS));
     }    
     
     public void loadPosition(ContentValues contentvalues){
@@ -120,16 +124,16 @@ public class ItemInfo implements Cloneable {
     }
     
     public void onAddToDatabase(ContentValues contentvalues){
-        contentvalues.put("itemType", Integer.valueOf(itemType));
+        contentvalues.put(LauncherSettings.BaseLauncherColumns.ITEM_TYPE, Integer.valueOf(itemType));
         if (!isGesture) {
-            contentvalues.put("container", Long.valueOf(container));
-            contentvalues.put("screen", Long.valueOf(screenId));
-            contentvalues.put("cellX", Integer.valueOf(cellX));
-            contentvalues.put("cellY", Integer.valueOf(cellY));
-            contentvalues.put("spanX", Integer.valueOf(spanX));
-            contentvalues.put("spanY", Integer.valueOf(spanY));
-            contentvalues.put("launchCount", Integer.valueOf(launchCount));
-            contentvalues.put("itemFlags", Integer.valueOf(itemFlags));
+            contentvalues.put(LauncherSettings.Favorites.CONTAINER, Long.valueOf(container));
+            contentvalues.put(LauncherSettings.Favorites.SCREEN, Long.valueOf(screenId));
+            contentvalues.put(LauncherSettings.Favorites.CELLX, Integer.valueOf(cellX));
+            contentvalues.put(LauncherSettings.Favorites.CELLY, Integer.valueOf(cellY));
+            contentvalues.put(LauncherSettings.Favorites.SPANX, Integer.valueOf(spanX));
+            contentvalues.put(LauncherSettings.Favorites.SPANY, Integer.valueOf(spanY));
+            contentvalues.put(LauncherSettings.Favorites.LAUNCHER_COUNT, Integer.valueOf(launchCount));
+            contentvalues.put(LauncherSettings.Favorites.ITEM_FLAG, Integer.valueOf(itemFlags));
         }
     }
     

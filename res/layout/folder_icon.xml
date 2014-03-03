@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<cn.minking.launcher.FolderIcon 
+    android:background="@drawable/shortcut_selector" 
+    android:focusable="true" 
+    android:animationCache="false" 
+    android:layout_width="fill_parent" 
+    android:layout_height="fill_parent"
+  xmlns:android="http://schemas.android.com/apk/res/android">
+  
+</cn.minking.launcher.FolderIcon>

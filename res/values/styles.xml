@@ -31,6 +31,12 @@
         <item name="android:shadowRadius">0.0</item>
     </style>
     
+    <style name="HotseatButton">
+        <item name="android:layout_width">0.0dip</item>
+        <item name="android:layout_height">fill_parent</item>
+        <item name="android:layout_marginTop">1.0dip</item>
+        <item name="android:layout_weight">0.0</item>
+    </style>
     <!--
         Base application theme, dependent on API level. This theme is replaced
         by AppBaseTheme from res/values-vXX/styles.xml on newer devices.

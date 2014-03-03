@@ -1,16 +1,28 @@
 package cn.minking.launcher;
-
+/**
+ * 作者：      minking
+ * 文件名称:    LauncherModel.java
+ * 创建时间：    2013
+ * 描述：  
+ * 更新内容
+ * ====================================================================================
+ * 20140228: Launcher加载类
+ * ====================================================================================
+ */
 import java.lang.ref.WeakReference;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 
+import cn.minking.launcher.AllAppsList.RemoveInfo;
 import cn.minking.launcher.gadget.GadgetInfo;
 import cn.minking.launcher.upsidescene.SceneData;
 import android.R.anim;
 import android.R.integer;
+import android.app.ActionBar.Tab;
 import android.appwidget.AppWidgetManager;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
@@ -19,8 +31,11 @@ import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.content.pm.PackageManager.NameNotFoundException;
+import android.content.res.Resources;
 import android.database.Cursor;
 import android.database.SQLException;
 import android.graphics.Bitmap;
@@ -33,6 +48,7 @@ import android.os.Process;
 import android.os.RemoteException;
 import android.os.SystemClock;
 import android.text.TextUtils;
+import android.text.format.Time;
 import android.util.Log;
 
 public class LauncherModel extends BroadcastReceiver {
@@ -52,7 +68,14 @@ public class LauncherModel extends BroadcastReceiver {
     
     private AllAppsList mAllAppsList = null;
     private WeakReference<Callbacks> mCallbacks = null;
-    private DeferredHandler mHandler = new DeferredHandler();
+    private DeferredHandler mHandler;
+    
+    // Specific runnable types that are run on the main thread deferred handler, this allows us to
+    // clear all queued binding runnables when the Launcher activity is destroyed.
+    private static final int MAIN_THREAD_NORMAL_RUNNABLE = 0;
+    private static final int MAIN_THREAD_BINDING_RUNNABLE = 1;
+    
+    /// M: 处理图标显示的缓存，在LauncherApplication中分配
     private IconCache mIconCache = null;
     
     private final LauncherApplication mApp;
@@ -60,8 +83,6 @@ public class LauncherModel extends BroadcastReceiver {
     // 
     private boolean mWorkspaceLoaded = false;
     private boolean mAllAppsLoaded = false;
-    
-    private boolean mIsLoaderTaskRunning;
     
     private final Object mAllAppsListLock = new Object();
     private final Object mLock = new Object();
@@ -110,11 +131,6 @@ public class LauncherModel extends BroadcastReceiver {
 
         @Override
         public void run() {
-            /// LoadTasker run 函数， 执行装载WORKSPACE及APP
-            synchronized (mLock) {
-                mIsLoaderTaskRunning = true;
-            }
-
             // 对终端用户的使用体验： 如果Launcher运行起来，在前端运行了APP，则首先装载所有的APP。否则，先装载WORKSPACE
             final Callbacks callbacks = mCallbacks.get();
             final boolean loadWorkspaceFirst = callbacks != null ? (!callbacks.isAllAppsVisible()) : true;
@@ -125,10 +141,16 @@ public class LauncherModel extends BroadcastReceiver {
                     android.os.Process.setThreadPriority(mIsLaunching ? Process.THREAD_PRIORITY_DEFAULT : Process.THREAD_PRIORITY_BACKGROUND);
                 }
                 
-                if (loadWorkspaceFirst) {
+                mHandler.post(new Runnable() {
+                        public void run(){
+                            if (!mStopped && callbacks != null)
+                                callbacks.startLoading();
+                        }
+                    });
+                Log.d(TAG, "step 1: loading workspace");
+                
+                synchronized (mLock){
                     loadAndBindWorkspace();
-                }else {
-                    loadAndBindAllApps();
                 }
                 
                 if (mStopped) {
@@ -138,16 +160,37 @@ public class LauncherModel extends BroadcastReceiver {
                 // 如果时间较久，那么将装载线程的优先级降下来，先处理UI的线程
                 synchronized (mLock) {
                     if (mIsLaunching) {
+                        Log.d(TAG, "Setting thread priority to BACKGROUND");
                         android.os.Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND);
                     }
                 }
                 
                 waitForIdle();
                 
-                if (loadWorkspaceFirst) {
-                    loadAndBindAllApps();
-                }else {
-                    loadAndBindWorkspace();
+                Log.d(TAG, "step 2: loading missing icons");
+                synchronized (mLock){
+                    loadAndBindMissingIcons();
+                }
+                
+                mHandler.post(new Runnable() {
+                    public void run(){
+                            if (!mStopped && callbacks != null){
+                                callbacks.finishLoading();
+                            }
+                        }
+                    });
+                
+                Log.d("Launcher.Model", "step 3: loading upside scene");
+                SceneData sceneData = new SceneData();
+                if (sceneData.loadData(mContext)) {
+                    mHandler.post(new DataCarriedRunnable(callbacks) {
+                        public void run(){
+                            if (!mStopped){
+                                Log.d(TAG, "Finally adding missing icons");
+                                callbacks.bindUpsideScene((SceneData)mData);
+                            }
+                        }
+                    });
                 }
                 
                 synchronized (mLock) {
@@ -155,20 +198,104 @@ public class LauncherModel extends BroadcastReceiver {
                 }
             }
             
-            synchronized (sBgLock) {
-                for (Object keyObject : sBgDbIconCache.keySet()){
-                    updateSavedIcon(mContext, (ShortcutInfo)keyObject, sBgDbIconCache.get(keyObject));
+            // 清除mContext的引用，防止callback的runnable运行完成后还一直持有
+            mContext = null;
+
+            synchronized (mLock) {
+                // If we are still the last one to be scheduled, remove ourselves.
+                if (mLoaderTask == this) {
+                    mLoaderTask = null;
                 }
-                sBgDbIconCache.clear();
+                if (LOGD) {
+                    Log.d(TAG, "Reset load task running flag <<<<, this = " + this);
+                }
             }
+
+        }
+        
+        private void loadAndBindMissingIcons(){
+            if (mStopped) return;
+            
+            Iterator<ComponentName> iterator = mInstalledComponents.iterator();
+            if (mInstalledComponents.size() == 0) {
+                Log.e(TAG, "No main activity found, the system is so clean");
+                return;
+            }
+            
+            if (mCallbacks == null) return;
+            
+            final Callbacks oldCallbacks = mCallbacks.get();
+            
+            if (oldCallbacks == null) {
+                Log.e(TAG, "No callback to call back");
+                return;
+            }
+            
+            HashSet<String> hashSet = new HashSet<String>();
+            
+            while (iterator.hasNext()){
+                ComponentName componentname = (ComponentName)iterator.next();
+                if (mStopped) {
+                    continue;
+                }
+                if (hashSet.contains(componentname.getPackageName()) || mLoadedApps.containsKey(componentname)) {
+                    continue;
+                }
+                try {
+                    LauncherSettings.updateHomeScreen(mContext, componentname.getPackageName());
+                    synchronized (mAllAppsListLock)
+                    {
+                        mAllAppsList.updatePackage(mContext, componentname.getPackageName());
+                    }
+                    hashSet.add(componentname.getPackageName());
+                } catch (Exception e) {
+                    Log.d(TAG, "database didnot ready,ignore this package.");
+                }
+            }
+            
+            if (!mStopped && (mAllAppsList.removed.size() > 0)) {
+                final ArrayList<RemoveInfo> removeList = new ArrayList<RemoveInfo>(mAllAppsList.removed);
+                mAllAppsList.removed.clear();
+                mHandler.post(new DataCarriedRunnable(oldCallbacks) {
+                    public void run(){
+                            Callbacks callbacks = tryGetCallbacks(oldCallbacks);
+                            if (!mStopped && callbacks != null){
+                                Log.d(TAG, "Finally removing useless icons");
+                                callbacks.bindAppsRemoved(removeList);
+                            }
+                        }
+                    });
+                onRemoveItems(mAllAppsList.removed);
+            }
+            
+            if (!mStopped && (mAllAppsList.added.size() > 0)) {
+                final ArrayList<ShortcutInfo> addList = new ArrayList<ShortcutInfo>(mAllAppsList.added);
+                mAllAppsList.added.clear();
+                mHandler.post(new DataCarriedRunnable(oldCallbacks) {
+                    public void run(){
+                            Callbacks callbacks = tryGetCallbacks(oldCallbacks);
+                            if (!mStopped && callbacks != null){
+                                Log.d(TAG, "Finally adding missing icons");
+                                callbacks.bindAppsAdded(addList);
+                            }
+                        }
+                    });
+                onLoadShortcuts(mAllAppsList.removed);
+            }
+            
+            mHandler.post(new Runnable() {
+                public void run(){
+                    Callbacks callbacks = tryGetCallbacks(oldCallbacks);
+                    if (!mStopped && callbacks != null){
+                        callbacks.finishBindingMissingItems();
+                    }
+                }
+            });
+            
         }
         
         public boolean isLaunching() {
             return mIsLaunching;
-        }
-        
-        public boolean isLoadingWorkspace() {
-            return mIsLoadingAndBindingWorkspace;
         }
         
         private void waitForIdle() {
@@ -176,11 +303,39 @@ public class LauncherModel extends BroadcastReceiver {
                 
             }
         }
+        
+        /**
+         * 功能：  BIND WORKSPACE
+         */
+        private void bindWorkspace() {
+            final long t = LOGD ? SystemClock.uptimeMillis() : 0;
+            Runnable r;
+            
+            final Callbacks oldCallbacks = mCallbacks.get();
+            if (oldCallbacks == null) {
+                Log.w(TAG, "MK : LoadTask running with no launcher");
+                return;
+            }
+            
+            // Tell the workspace that we're about to start binding items
+            r = new Runnable() {
+                public void run() {
+                    Callbacks callbacks = tryGetCallbacks(oldCallbacks);
+                    if (callbacks != null) {
+                        callbacks.startBinding();
+                    }
+                }
+            };
+            runOnMainThread(r, MAIN_THREAD_BINDING_RUNNABLE);
+        }
+        
         private void loadAndBindWorkspace(){
             if (!mWorkspaceLoaded) {
+                Log.d(TAG, (new StringBuilder()).append("loadAndBindWorkspace loaded=").append(mWorkspaceLoaded).toString());
                 loadWorkspace();
                 synchronized (LoaderTask.this) {
                     if (mStopped) {
+                        mWorkspaceLoaded = false;
                         return;
                     }
                     mWorkspaceLoaded = true;
@@ -188,7 +343,7 @@ public class LauncherModel extends BroadcastReceiver {
             }
             
             // 绑定 workspace
-            bindWorkspace(-1);
+            bindWorkspace();
         }
         
         private void loadAndBindAllApps() {
@@ -196,6 +351,7 @@ public class LauncherModel extends BroadcastReceiver {
                 loadAllAppsByBatch();
                 synchronized (LoaderTask.this) {
                     if (mStopped) {
+                        Log.w(TAG, "loadAndBindAllApps returned by stop flag.");
                         return;
                     }
                     mAllAppsLoaded = true;
@@ -204,9 +360,9 @@ public class LauncherModel extends BroadcastReceiver {
                 onlyBindAllApps();
             }
         }
-        
+
         private void loadWorkspace() {
-            final long t = SystemClock.uptimeMillis();
+            final long t = LOGD ? SystemClock.uptimeMillis() : 0;
             final Context context = mContext;
             final ContentResolver contentResolver = context.getContentResolver();
             final PackageManager manager = context.getPackageManager();
@@ -234,7 +390,6 @@ public class LauncherModel extends BroadcastReceiver {
                 int appCounts = 0;
                 if (LOGD) Log.d(TAG, "MK : appCounts = " + appCounts);
                 
-                
                 while (resolveInfo.hasNext()) {
                     ResolveInfo rInfo = resolveInfo.next();
                     String packageName = rInfo.activityInfo.packageName;
@@ -252,41 +407,42 @@ public class LauncherModel extends BroadcastReceiver {
                     updateInstalledComponentsArg(mContext);
                 }
                 
-                ArrayList<Object> arrayList = new ArrayList<Object>();
-                ArrayList<ItemInfo> arrayList2 = new ArrayList<ItemInfo>();
-                Uri joinUri = LauncherSettings.Favorites.getJoinContentUri(" JOIN screens ON favorites.screen=screens._id");
-                String aString1[] = ItemQuery.COLUMNS;
-                String aString3[] = new String[1];
-                aString3[0] = String.valueOf(-100);
+                // ITEM 的 ID 列表
+                ArrayList<Long> idList = new ArrayList<Long>();
+                ArrayList<ItemInfo> itemList = new ArrayList<ItemInfo>();
+                //Uri joinUri = LauncherSettings.Favorites.getJoinContentUri(" JOIN screens ON favorites.screen=screens._id");
+                String columns[] = ItemQuery.COLUMNS;
+                String containerSel[] = new String[1];
+                containerSel[0] = String.valueOf(LauncherSettings.Favorites.CONTAINER_DESKTOP);
                 
-                loadItems(contentResolver.query(joinUri, aString1, "container=?", aString3, "screens.screenOrder ASC, celly ASC, cellX ASC, itemType ASC"), 
-                        arrayList, arrayList2);
+                //loadItems(contentResolver.query(joinUri, aString1, "container=?", aString3, "screens.screenOrder ASC, celly ASC, cellX ASC, itemType ASC"), 
+                //      arrayList, arrayList2);
                 
                 Uri uri = LauncherSettings.Favorites.CONTENT_URI;
-                loadItems(contentResolver.query(uri, aString1, "container!=?", aString3, null), arrayList, arrayList2);
+                loadItems(contentResolver.query(uri, columns, "container!=?", containerSel, null), idList, itemList);
                 ContentProviderClient contentProviderClient = mContentResolver.acquireContentProviderClient(LauncherSettings.Favorites.CONTENT_URI);
                 
-                if (!arrayList.isEmpty()) {
-                    for (Iterator<Object> iterator = arrayList.iterator(); iterator.hasNext();) {
-                        long l = ((Long)iterator.next()).longValue();
-                        Log.d(TAG, "MK : " + (new StringBuilder()).append("Removed id = ").append(l).toString());
+                if (!idList.isEmpty()) {
+                    for (Iterator<Long> iterator = idList.iterator(); iterator.hasNext();) {
+                        long id = (iterator.next()).longValue();
+                        Log.d(TAG, "MK : " + (new StringBuilder()).append("Removed id = ").append(id).toString());
                         try {
-                            contentProviderClient.delete(LauncherSettings.Favorites.getContentUri(l), null, null);
+                            contentProviderClient.delete(LauncherSettings.Favorites.getContentUri(id), null, null);
                         } catch (RemoteException _ex) {
-                            Log.w(TAG, "MK : " + (new StringBuilder()).append("Could not remove id = ").append(l).toString());
+                            Log.w(TAG, "MK : " + (new StringBuilder()).append("Could not remove id = ").append(id).toString());
                         } catch (SQLException _ex) {
-                            Log.w(TAG, "MK : " + (new StringBuilder()).append("Could not remove id(database readonly) = ").append(l).toString());
+                            Log.w(TAG, "MK : " + (new StringBuilder()).append("Could not remove id(database readonly) = ").append(id).toString());
                         }
                     }
                 }
                 
-                if (!arrayList2.isEmpty()) {
+                if (!itemList.isEmpty()) {
                     ContentValues contentValues = new ContentValues();
                     contentValues.put("screen", Integer.valueOf(-1));
                     
                     StringBuilder stringBuilder = new StringBuilder();
                     stringBuilder.append("_id").append(" IN(");
-                    for (Iterator<ItemInfo> iterator = arrayList2.iterator(); 
+                    for (Iterator<ItemInfo> iterator = itemList.iterator(); 
                             iterator.hasNext();){
                         stringBuilder.append(((ItemInfo)iterator.next()).id).append(',');
                     }
@@ -297,7 +453,7 @@ public class LauncherModel extends BroadcastReceiver {
                         remoteException.printStackTrace();
                     }
                     
-                    Iterator<ItemInfo> itemIterator = arrayList2.iterator();
+                    Iterator<ItemInfo> itemIterator = itemList.iterator();
                     while (itemIterator.hasNext()) {
                         ItemInfo itemInfo = itemIterator.next();
                         itemInfo.screenId = -1L;
@@ -315,20 +471,277 @@ public class LauncherModel extends BroadcastReceiver {
             }
         }
         
-        private void loadItems(Cursor cursor, ArrayList<Object> arrayList, ArrayList<ItemInfo> arrayList2){
-            /*while (!mStopped && cursor.moveToNext()) {
+        private boolean isInvalidPosition(ItemInfo iteminfo){
+            boolean flag;
+            if ((iteminfo.container != LauncherSettings.Favorites.CONTAINER_DESKTOP
+                    || ((iteminfo.cellX >= 0 && ((iteminfo.cellX + iteminfo.spanX) < ResConfig.getCellCountX()))
+                        && (iteminfo.cellY >= 0 && ((iteminfo.cellY + iteminfo.spanY) < ResConfig.getCellCountY()))))
+                        && (iteminfo.container != LauncherSettings.Favorites.CONTAINER_HOTSEAT 
+                            || (iteminfo.cellX >= 0 && iteminfo.cellX < ResConfig.getHotseatCount()))) {
+                flag = false;
+            }else {
+                flag = true;
+            }
+            return flag;
+        }
+        
+        private boolean ensureItemUniquePostiton(Context context, Long id, int i){
+            return false;
+        }
+        
+        public Bitmap getFallbackIcon(){
+            return Bitmap.createBitmap(mIconCache.getDefaultIcon());
+        }
+
+        Bitmap getIconFromCursor(Cursor cursor, int iconIndex){
+            if (LOGD) {
+                Log.d(TAG, "getIconFromCursor app="
+                        + cursor.getString(cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.TITLE)));
+            }
+            byte[] data = cursor.getBlob(iconIndex);
+            if (data == null) {
+                return null;
+            }
+            try {
+                return BitmapFactory.decodeByteArray(data, 0, data.length);
+            } catch (Exception e) {
+                return null;
+            }
+        }
+        
+        public ShortcutInfo getShortcutInfo(PackageManager packageManager, Intent intent, 
+                Context context, Cursor cursor, int iType, int iTitle){
+            Bitmap bitmap = null;
+            ShortcutInfo shortcutInfo = new ShortcutInfo();
+            ComponentName componentName = intent.getComponent();
+            
+            if (componentName != null) {
+                ResolveInfo resolveInfo = packageManager.resolveActivity(intent, 0);
+                if (resolveInfo != null) {
+                    bitmap = mIconCache.getIcon(componentName, resolveInfo);
+                }
+                if (bitmap == null && cursor != null) {
+                    bitmap = getIconFromCursor(cursor, iType);
+                }
+                if (bitmap == null) {
+                    bitmap = getFallbackIcon();
+                    shortcutInfo.usingFallbackIcon = true;
+                }
+                shortcutInfo.setIcon(bitmap);
+                if (resolveInfo != null) {
+                    shortcutInfo.title = resolveInfo.activityInfo.loadLabel(packageManager);
+                }
+                if (shortcutInfo.title == null && cursor != null) {
+                    shortcutInfo.title = cursor.getString(iTitle);
+                }
+                if (shortcutInfo.title == null) {
+                    shortcutInfo.title = componentName.getClassName();
+                }
+            }else {
+                shortcutInfo = null;
+            }
+            return shortcutInfo;
+        }
+        
+        public ShortcutInfo getShortcutInfo(Intent intent, Cursor cursor, Context context, 
+                int iIconType, int iIconPackage, int iIconResource, int iIcon, int iTitle){
+            Bitmap bitmap = null;
+            ShortcutInfo shortcutInfo = new ShortcutInfo();
+            shortcutInfo.itemType = 1;
+            shortcutInfo.itemFlags = cursor.getInt(19);
+            shortcutInfo.title = cursor.getString(iTitle);
+            shortcutInfo.mIconType = cursor.getInt(iIconType);
+            switch(shortcutInfo.mIconType){
+            case LauncherSettings.Favorites.ICON_TYPE_RESOURCE:
+                String packageName = cursor.getString(iIconPackage);
+                String resourceName = cursor.getString(iIconResource);
+                PackageManager packageManager = context.getPackageManager();
+                if (context.getPackageName().equals(packageName))
+                    shortcutInfo.isRetained = true;
+                
                 try {
-                    int itemType = cursor.getInt(8);
-                    switch (itemType) {
+                    Resources resources = packageManager.getResourcesForApplication(packageName);
+                    if (resources != null) {
+                        final int id = resources.getIdentifier(resourceName, null, null);
+                        bitmap = Utilities.createIconBitmap(
+                                resources.getDrawable(id), context);
+                    }
+                } catch (Exception e) {
+                    // drop this.  we have other places to look for icons
+                }
+                // the db
+                if (bitmap == null) {
+                    bitmap = getIconFromCursor(cursor, iIcon);
+                }
+                // the fallback icon
+                if (bitmap == null) {
+                    bitmap = getFallbackIcon();
+                    shortcutInfo.usingFallbackIcon = true;
+                }
+                break;
+            case LauncherSettings.Favorites.ICON_TYPE_BITMAP:
+                bitmap = getIconFromCursor(cursor, iIcon);
+                if (bitmap == null) {
+                    bitmap = getFallbackIcon();
+                    shortcutInfo.usingFallbackIcon = true;
+                }
+                break;
+            case 2:
+                //shortcutInfo.intent = intent;
+                //shortcutInfo.loadContactInfo(context);
+                break;
+            case 3:
+                //shortcutInfo.intent = intent;
+                //shortcutInfo.loadToggleInfo(context);
+                break;
+            default:
+                bitmap = getFallbackIcon();
+                shortcutInfo.usingFallbackIcon = true;
+                break;
+            }
+            if (2 != shortcutInfo.mIconType && 3 != shortcutInfo.mIconType){
+                shortcutInfo.setIcon(bitmap);
+                shortcutInfo.wrapIconWithBorder(context);
+            }
+            
+            return shortcutInfo;
+        }
+        
+        
+        private void loadShortcut(Cursor cursor, int itemType, ArrayList<Long> idList, ArrayList<ItemInfo> itemList){
+            if (cursor == null) {
+                return;
+            }
+            Intent intent;
+            ShortcutInfo shortcutInfo;
+            int idIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites._ID);
+            int classNameIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.INTENT);
+            
+            try {
+                long id = cursor.getLong(idIndex);
+                if (ensureItemUniquePostiton(mContext, Long.valueOf(id), 0)){
+                    return;
+                }
+                intent = Intent.parseUri(cursor.getString(classNameIndex), 0);
+                if (itemType != LauncherSettings.Favorites.ITEM_TYPE_APPLICATION) {
+                    ComponentName componentName = intent.getComponent();
+                    if (mInstalledComponents.contains(componentName) 
+                            || LauncherSettings.isRetainedComponent(componentName)){
+                        
+                    }
                     
-                    default:
+                    try{
+                        if (mContext.getPackageManager().getPackageGids((componentName).getPackageName()).length != 0){
+                            idList.add(Long.valueOf(id));
+                            Log.w(TAG, (new StringBuilder()).
+                                    append("Remove:").append(componentName).
+                                    append(",package updated but current class does not exist.").toString());
+                        }
+                    }
+                    catch (NameNotFoundException ex) { 
+                        Log.w(TAG, "package not finded" + componentName);
+                    }
+                    if (mIsJustRestoreFinished){
+                        Log.e(TAG, (new StringBuilder()).append("Restored:").
+                                append(componentName).append(",doesn't exist anymore,removing it.").toString());
+                        idList.add(Long.valueOf(id));
+                    }
+                }
+                
+                if(itemType == LauncherSettings.Favorites.ITEM_TYPE_APPLICATION){
+                    shortcutInfo = getShortcutInfo(mManager, intent, mContext, cursor, 
+                            colToInt(ItemQuery.COL.ITEMTYPE), colToInt(ItemQuery.COL.TITLE));
+                    if (shortcutInfo != null && mLoadedApps.containsKey(intent.getComponent()))
+                        shortcutInfo = null;
+                    else
+                        mLoadedApps.put(intent.getComponent(), Long.valueOf(id));
+                } else {
+                    shortcutInfo = getShortcutInfo(intent, cursor, mContext, 
+                            colToInt(ItemQuery.COL.ICONTYPE), colToInt(ItemQuery.COL.ICONPACKAGE),
+                            colToInt(ItemQuery.COL.ICONRESOURCE), colToInt(ItemQuery.COL.ICON),
+                            colToInt(ItemQuery.COL.TITLE));
+                }
+                
+                if (shortcutInfo != null) {
+                    shortcutInfo.intent = intent;
+                    shortcutInfo.load(cursor);
+                    if (isInvalidPosition(shortcutInfo)) {
+                        itemList.add(shortcutInfo);
+                    }
+                    updateSavedIcon(mContext, shortcutInfo, cursor, 4);
+                    if (shortcutInfo.container == LauncherSettings.Favorites.CONTAINER_DESKTOP
+                            || shortcutInfo.container == LauncherSettings.Favorites.CONTAINER_HOTSEAT) {
+                        mItems.add(shortcutInfo);
+                    }else {
+                        LauncherModel.findOrMakeUserFolder(mFolders, shortcutInfo.container).add(shortcutInfo);
+                    }
+                    onLoadShortcut(shortcutInfo);
+                }
+                
+                if (shortcutInfo == null) {
+                    Log.e(TAG, (new StringBuilder()).append("Error loading shortcut ").append(id).append(", removing it").toString());
+                    idList.add(Long.valueOf(id));
+                }
+            } catch (URISyntaxException e) {
+                
+            }
+
+            
+            
+            
+            
+        }
+        
+        private void loadFolder(Cursor cursor, ArrayList<ItemInfo> itemList){
+            
+        }
+        
+        private void loadAppWidget(Cursor cursor, ArrayList<Long> idList, ArrayList<ItemInfo> itemList){
+            
+        }
+        
+        private void loadGadget(Cursor cursor, ArrayList<Long> idList, ArrayList<ItemInfo> itemList){
+            
+        }
+        
+        private void loadItems(Cursor cursor, ArrayList<Long> idList, ArrayList<ItemInfo> itemList){
+            int itemTypeIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.ITEM_TYPE);
+            
+            while (!mStopped && cursor.moveToNext()) {
+                try {
+                    int itemType = cursor.getInt(itemTypeIndex);                    
+                    switch (itemType) {
+                        case LauncherSettings.Favorites.ITEM_TYPE_APPLICATION:
+                        case LauncherSettings.Favorites.ITEM_TYPE_SHORTCUT:
+                        {
+                            loadShortcut(cursor, itemType, idList, itemList);
+                        }
                         break;
+                        case LauncherSettings.Favorites.ITEM_TYPE_FOLDER:
+                        {
+                            loadFolder(cursor, itemList);
+                        }
+                        break;
+                        case LauncherSettings.Favorites.ITEM_TYPE_APPWIDGET:
+                        {
+                            loadAppWidget(cursor, idList, itemList);
+                        }
+                        break;
+                        case LauncherSettings.Favorites.ITEM_TYPE_GADGET:
+                        {
+                            loadGadget(cursor, idList, itemList);
+                        }
+                        break;
+                                
+                        default:
+                            break;
                     }
                 } catch (Exception e) {
                     Log.w(TAG, "MK : Desktop items loading interrupted:", e);
+                    continue;
                 }
-                
-            }*/
+            }
+            cursor.close();
         }
         
         private void updateInstalledComponentsArg(Context context){
@@ -341,11 +754,64 @@ public class LauncherModel extends BroadcastReceiver {
             }
         }
         
-        private void bindWorkspace(int synchronizeBindPage) {
-            
-        }
-        
         private void loadAllAppsByBatch(){
+            final long t = LOGD ? SystemClock.uptimeMillis() : 0;
+            final Callbacks oldCallbacks = mCallbacks.get();
+            
+            if (oldCallbacks == null) {
+                Log.w(TAG, "MK : LoaderTask running with no launcher (loadAllAppsByBatch)");
+                return;
+            }
+            final Intent mainIntent = new Intent(Intent.ACTION_MAIN, null);
+            mainIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+            
+            final PackageManager packageManager = mContext.getPackageManager();
+            List<ResolveInfo> apps = null;
+            
+            int N = Integer.MAX_VALUE;
+            
+            int startIndex;
+            int i = 0;
+            while ((i < N) && !mStopped){
+                if (i == 0) {
+                    mAllAppsList.clear();
+                    final long qiaTime = LOGD ? SystemClock.uptimeMillis() : 0;
+                    apps = packageManager.queryIntentActivities(mainIntent, 0);
+                    if (LOGD) {
+                        Log.d(TAG, "queryIntentActivities took "
+                                + (SystemClock.uptimeMillis() - qiaTime) + "ms");
+                    }
+                    if (apps == null) {
+                        return;
+                    }
+                    
+                    // 得到APP的总数
+                    N = apps.size();
+                    
+                    if (N == 0){
+                        return;
+                    }
+                }
+
+                final long t2 = LOGD ? SystemClock.uptimeMillis() : 0;
+                
+                
+                i++;
+                
+
+                final Callbacks callbacks = tryGetCallbacks(oldCallbacks);
+                final ArrayList<ShortcutInfo> added = mAllAppsList.added;
+                mHandler.post(new Runnable() {
+                    public void run() {
+                        final long t = LOGD ? SystemClock.uptimeMillis() : 0;
+                        if (callbacks != null) {
+                                callbacks.bindAppsAdded(added);
+                        } else {
+                            Log.i(TAG, "MK : not binding apps: no Launcher activity");
+                        }
+                    }
+                });
+            }
             
         }
         
@@ -360,6 +826,30 @@ public class LauncherModel extends BroadcastReceiver {
             }
         }
         
+        Callbacks tryGetCallbacks(Callbacks oldCallbacks){
+            synchronized (mLock) {
+                if (mStopped) {
+                    Log.i(TAG, "tryGetCallbacks returned null by stop flag.");
+                    return null;
+                }
+
+                if (mCallbacks == null) {
+                    return null;
+                }
+
+                final Callbacks callbacks = mCallbacks.get();
+                if (callbacks != oldCallbacks) {
+                    return null;
+                }
+                if (callbacks == null) {
+                    Log.w(TAG, "no mCallbacks");
+                    return null;
+                }
+
+                return callbacks;
+            }
+        }
+        
         public LoaderTask(Context context, boolean is_launching, boolean is_restore_finished) {
             mInstalledComponents = new HashSet<ComponentName>();
             mContext = context;
@@ -370,14 +860,20 @@ public class LauncherModel extends BroadcastReceiver {
         }
     }
     
+    private abstract class DataCarriedRunnable implements Runnable {
+        protected Callbacks mData;
+        public DataCarriedRunnable(Callbacks obj){
+            mData = obj;
+        }
+    }
     
     public static interface Callbacks{
 
         public abstract void bindAppWidget(LauncherAppWidgetInfo launcherappwidgetinfo);
 
-        public abstract void bindAppsAdded(ArrayList arraylist);
+        public abstract void bindAppsAdded(ArrayList<ShortcutInfo> arraylist);
 
-        public abstract void bindAppsRemoved(ArrayList arraylist);
+        public abstract void bindAppsRemoved(ArrayList<RemoveInfo> arraylist);
 
         public abstract void bindFolders(HashMap hashmap);
 
@@ -406,10 +902,120 @@ public class LauncherModel extends BroadcastReceiver {
     
     
     public LauncherModel(LauncherApplication launcherApplication, IconCache iconCache) {
-        mApp = launcherApplication;
-        mIconCache = iconCache;
         mHandler = new DeferredHandler();
         mAllAppsList = new AllAppsList();
+        mApp = launcherApplication;
+        mIconCache = iconCache;
+    }
+    
+    
+    static void addItemToDatabase(Context context, ItemInfo iteminfo, final long container, 
+            final int screen, final int cellX, final int cellY){
+        addItemToDatabase(context, iteminfo, container, screen, cellX, cellY, false);
+    }
+    
+    /**
+     * 功能：  将读取的Item添加到数据库中
+     * @param context
+     * @param iteminfo
+     * @param container ： 属于哪个容器（WORKSPACE OR HOTSEAT）
+     * @param screen: 属于哪个SCREEN
+     * @param cellX： SCREEN中的 X 位置
+     * @param cellY： SCREEN中的 Y 位置
+     * @param reload: 是否需要重新加载
+     */
+    static void addItemToDatabase(Context context, final ItemInfo item, final long container, 
+            final int screen, final int cellX, final int cellY, final boolean reload){
+        if (LOGD) {
+            Log.d(TAG, "addItemToDatabase item = " + item + ", container = " + container + ", screen = " + screen
+                    + ", cellX " + cellX + ", cellY = " + cellY + ", notify = " + reload);
+        }
+        
+        item.container = container;
+        item.screenId = screen;
+        item.cellX = cellX;
+        item.cellY = cellY;
+        
+        LauncherApplication app = (LauncherApplication) context.getApplicationContext();
+        
+        // 生成一个新的ID给这个ITEM
+        item.id = app.getLauncherProvider().generateNewId();
+        
+        final ContentValues values = new ContentValues();
+        final ContentResolver cr = context.getContentResolver();
+        
+        // 添加至数据库中
+        item.onAddToDatabase(values);
+        
+        values.put(LauncherSettings.Favorites._ID, item.id);
+        
+        Runnable r = new Runnable() {
+            public void run() {
+                String transaction = "DbDebug    Add item (" + item.id + ") to db, id: "
+                        + item.id + " (" + container + ", " + screen + ", " + cellX + ", "
+                        + cellY + ")";
+                // Launcher.sDumpLogs.add(transaction);
+                Log.d(TAG, transaction);
+                Uri uri = cr.insert(LauncherSettings.Favorites.CONTENT_URI, values);
+                if (uri == null) {
+                    Log.d(TAG, (new StringBuilder()).append("Error when insert item to database with spanX:")
+                            .append(item.spanX).append(" spanY:").append(item.spanY).append(",ignore it.").toString());
+                    return;
+                }
+                Cursor cursor = cr.query(LauncherSettings.Favorites.getContentUri(item.id), ItemQuery.COLUMNS, null, null, null);
+                if (cursor == null) {
+                    return;
+                }
+                if (cursor.moveToNext()){
+                    item.load(cursor);
+                }
+                cursor.close();
+            }
+        };
+        runOnWorkerThread(r);
+    }
+    /**
+     * 功能：  
+     */
+    private void onLoadShortcuts(ArrayList arraylist){
+        
+    }
+    
+    /**
+     * 功能：  
+     */
+    private void onRemoveItems(ArrayList arraylist){
+        
+    }
+    
+    /**
+     * 功能：  将线程放入到主线程上立即执行
+     */
+    private void runOnMainThread(Runnable r) {
+        runOnMainThread(r, 0);
+    }
+    
+    /**
+     * 功能：  
+     */
+    private void runOnMainThread(Runnable r, int type) {
+        if (sWorkerThread.getThreadId() == Process.myTid()) {
+            // If we are on the worker thread, post onto the main handler
+            mHandler.post(r);
+        } else {
+            r.run();
+        }
+    }
+    
+    /** Runs the specified runnable immediately if called from the worker thread, otherwise it is
+     * posted on the worker thread handler. */
+    private static void runOnWorkerThread(Runnable r) {
+        if (sWorkerThread.getThreadId() == Process.myTid()) {
+            r.run();
+        } else {
+            // If we are not on the worker thread, then post to the worker handler
+            sWorker.post(r);
+        }
     }
     
     public void initialize(Callbacks callbacks) {
@@ -433,6 +1039,41 @@ public class LauncherModel extends BroadcastReceiver {
         }
     }
     
+    private void onLoadShortcut(ShortcutInfo shortcutinfo){
+        synchronized (mLock) {
+            if (shortcutinfo.intent != null) {
+                mLoadedUris.add(makeUniquelyIntentKey(shortcutinfo.intent));
+                String packageName = shortcutinfo.getPackageName();
+                if (packageName != null)
+                {
+                    mLoadedPackages.add(packageName);
+                    if (shortcutinfo.isPresetApp())
+                        mLoadedPresetPackages.add(packageName);
+                }
+            }
+        }
+    }
+    
+    private String makeUniquelyIntentKey(Intent intent){
+        String string = "";
+        
+        if (intent != null) {
+            Intent intentTmp = new Intent(intent);
+            if (intentTmp.getComponent() != null
+                    && intentTmp.getComponent().getPackageName().equals(intentTmp.getPackage())) {
+                intentTmp.setPackage(null);
+            }
+            intentTmp.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            if (intentTmp.getCategories() != null) {
+                intentTmp.getCategories().clear();
+            }
+            intentTmp.setAction(null);
+            string = intentTmp.toUri(0);
+        }
+        
+        return string;
+    }
+    
     public void resetLoadedState(boolean resetAllAppsLoaded, boolean resetWorkspaceLoaded) {
         synchronized (mLock) {
             // 首先停止现有的加载器，mAllAppsLoaded及mWorkspaceLoaded设置为false
@@ -440,6 +1081,15 @@ public class LauncherModel extends BroadcastReceiver {
             if (resetAllAppsLoaded) mAllAppsLoaded = false;
             if (resetWorkspaceLoaded) mWorkspaceLoaded = false;
         }
+    }
+    
+    private static FolderInfo findOrMakeUserFolder(HashMap<Long, FolderInfo> hashmap, long container){
+        FolderInfo folderInfo = hashmap.get(Long.valueOf(container));
+        if ((folderInfo == null) && (folderInfo instanceof FolderInfo)) {
+            folderInfo = new FolderInfo();
+            hashmap.put(Long.valueOf(container), folderInfo);
+        }
+        return folderInfo;
     }
     
     private boolean stopLoaderLocked() {
@@ -460,15 +1110,153 @@ public class LauncherModel extends BroadcastReceiver {
 
     }
     
-    public void updateSavedIcon(Context context, ShortcutInfo info, byte[] data) {
-
+    public void updateSavedIcon(Context context, ShortcutInfo shortcutinfo, Cursor cursor, int iconIndex){
+        boolean needSave = true;
+        if (!shortcutinfo.onExternalStorage 
+                || shortcutinfo.mIconType != LauncherSettings.Favorites.ITEM_TYPE_APPLICATION
+                || shortcutinfo.usingFallbackIcon) {
+            return;
+        }
+        byte[] data = cursor.getBlob(iconIndex);
+        
+        try {
+            if (data != null) {
+                Bitmap saved = BitmapFactory.decodeByteArray(data, 0, data.length);
+                Bitmap loaded = shortcutinfo.getIcon(mIconCache);
+                needSave = !saved.sameAs(loaded);
+            } else {
+                needSave = true;
+            }
+        } catch (Exception e) {
+            needSave = true;
+        }
+        if (needSave) {
+            Log.d(TAG, "going to save icon bitmap for info=" + shortcutinfo);
+            // This is slower than is ideal, but this only happens once
+            // or when the app is updated with a new icon.
+            updateItemInDatabase(context, shortcutinfo);
+        }
     }
     
     /**
      * Update an item to the database in a specified container.
      */
-    public static void updateItemInDatabase(Context context, final ItemInfo item) {
-
+    public static void updateItemInDatabase(final Context context, long id, final ContentValues contentvalues) {
+        final Uri uri = LauncherSettings.Favorites.CONTENT_URI;
+        final ContentResolver cr = context.getContentResolver();
+        
+        runOnWorkerThread(new Runnable() {
+            @Override
+            public void run() {
+                if (cr.update(uri, contentvalues, null, null) >= 0) {
+                    return;
+                }else {
+                    throw new RuntimeException("update Item in database failed.");
+                }
+            }
+        });
     }
 
+    static void updateItemInDatabase(Context context, ItemInfo iteminfo){
+        final ContentValues values = new ContentValues();
+        iteminfo.onAddToDatabase(values);
+        
+        if (LOGD) {
+            Object aobj[] = new Object[4];
+            aobj[0] = Integer.valueOf(iteminfo.cellX);
+            aobj[1] = Integer.valueOf(iteminfo.cellY);
+            aobj[2] = Long.valueOf(iteminfo.screenId);
+            aobj[3] = Long.valueOf(iteminfo.container);
+            Log.d(TAG, String.format("Update item in database (%d, %d) of screen %d under container %d", aobj));
+        }
+        
+        updateItemInDatabase(context, iteminfo.id, values);
+    }
+    
+    public AllAppsList getAllAppsList() {
+        return mAllAppsList;
+    }
+    
+    public ShortcutInfo getShortcutInfo(Intent intent, Cursor cursor, Context context, 
+            int iconTypeIndex, int iconPackageIndex, int iconResourceIndex, int iconIndex, int titleIndex){
+        ShortcutInfo shortcutInfo = new ShortcutInfo();;
+        return shortcutInfo;
+    }
+    
+    public ShortcutInfo getShortcutInfo(PackageManager packagemanager, Intent intent, 
+            Context context, Cursor cursor, int iconIndex, int titleIndex){
+        ShortcutInfo shortcutinfo = new ShortcutInfo();
+        return shortcutinfo;
+    }
+    
+    public static int colToInt(ItemQuery.COL col){
+        int i = 0;
+        switch (col) {
+        case ID:
+            i = 0;
+            break;
+        case TITLE:
+            i = 1;
+            break;
+        case INTENT:
+            i = 2;
+            break;
+        case CONTAINER:
+            i = 3;
+            break;
+        case SCREEN:
+            i = 4;
+            break;
+        case CELLX:
+            i = 5;
+            break;
+        case CELLY:
+            i = 6;
+            break;
+        case SPANX:
+            i = 7;
+            break;
+        case SPANY:
+            i = 8;
+            break;
+        case ITEMTYPE:
+            i = 9;
+            break;
+        case APPWIDGETID:
+            i = 10;
+            break;
+        case ISSHORTCUT:
+            i = 11;
+            break;
+        case ICONTYPE:
+            i = 12;
+            break;
+        case ICONPACKAGE:
+            i = 13;
+            break;
+        case ICONRESOURCE:
+            i = 14;
+            break;
+        case ICON:
+            i = 15;
+            break;
+        case URI:
+            i = 16;
+            break;
+        case DISPLAYMODE:
+            i = 17;
+            break;
+        case LAUNCHERCOUNT:
+            i = 18;
+            break;
+        case SORTMODE:
+            i = 19;
+            break;
+        case ITEMFLAGS:
+            i = 20;
+            break;
+        }
+        return i;
+    }
+    
 }

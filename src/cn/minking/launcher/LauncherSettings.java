@@ -9,25 +9,27 @@ import android.provider.BaseColumns;
 
 public class LauncherSettings{
     public static final class Packages implements BaseColumns{
-        public static final Uri CONTENT_URI = Uri.parse("content://cn.minking.launcher.settings/packages");
+        public static final Uri CONTENT_URI = Uri.parse("content://"
+                + LauncherProvider.AUTHORITY + "/packages");
     }
     
     public static final class Screens implements BaseColumns{
-        public static final Uri CONTENT_URI = Uri.parse("content://cn.minking.launcher.settings/screens");
+        public static final Uri CONTENT_URI = Uri.parse("content://"
+                + LauncherProvider.AUTHORITY + "/screens");
     }
     
     public static final class Favorites implements BaseLauncherColumns{
         public static final Uri CONTENT_URI = Uri.parse("content://"
                 + LauncherProvider.AUTHORITY + "/" + LauncherProvider.TABLE_FAVORITES);
         
-        public static Uri getContentUri(long l) {
+        public static Uri getContentUri(long id) {
             return Uri.parse((new StringBuilder()).append("content://"
-                    + LauncherProvider.AUTHORITY + "/" + LauncherProvider.TABLE_FAVORITES + "/").append(l).toString());
+                    + LauncherProvider.AUTHORITY + "/" + LauncherProvider.TABLE_FAVORITES + "/").append(id).toString());
         }
         
         public static Uri getJoinContentUri(String s) {
             return Uri.parse((new StringBuilder()).append("content://"
-                    + LauncherProvider.AUTHORITY + "/" + LauncherProvider.TABLE_FAVORITES + "/").append(s).toString());
+                    + LauncherProvider.AUTHORITY + "/" + LauncherProvider.TABLE_FAVORITES).append(s).toString());
         }
         
         /**
@@ -73,6 +75,9 @@ public class LauncherSettings{
          * <P>Type: INTEGER</P>
          */
         static final String SPANY = "spanY";
+        
+        static final String LAUNCHER_COUNT = "launchCount";
+        static final String ITEM_FLAG = "itemFlags";
 
         /**
          * The favorite is a user created folder
@@ -93,6 +98,11 @@ public class LauncherSettings{
          */
         static final int ITEM_TYPE_APPWIDGET = 4;
 
+        /**
+         * The favorite is a widget
+         */
+        static final int ITEM_TYPE_GADGET = 5;
+        
         /**
          * The favorite is a clock
          */

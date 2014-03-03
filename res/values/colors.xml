@@ -3,4 +3,6 @@
 	<color name="icon_title_text">#ffffffff</color>
 	<color name="icon_title_text_shadow">#ff000000</color>
 	<color name="preview_background">#99000000</color>
+	<color name="icon_message_text">#ffffffff</color>
+	<color name="icon_shadow">#60000000</color>
 </resources>

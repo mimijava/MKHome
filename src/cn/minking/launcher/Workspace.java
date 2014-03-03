@@ -1,5 +1,14 @@
 package cn.minking.launcher;
-
+/**
+ * 作者：      minking
+ * 文件名称:    Workspace.java
+ * 创建时间：    2013
+ * 描述：  
+ * 更新内容
+ * ====================================================================================
+ * 20140228: WORKSPACE文件
+ * ====================================================================================
+ */
 import android.app.WallpaperManager;
 import android.content.ContentResolver;
 import android.content.Context;
@@ -10,6 +19,7 @@ import android.preference.PreferenceManager;
 import android.util.AttributeSet;
 import android.view.LayoutInflater;
 import android.view.ScaleGestureDetector;
+import android.view.View;
 import android.widget.FrameLayout;
 
 public class Workspace extends DragableScreenView {
@@ -148,4 +158,22 @@ public class Workspace extends DragableScreenView {
             mOldTransitionType = i;
         }
     }
+    
+    public CellLayout getCurrentCellLayout(){
+        return getCurrentCellScreen().getCellLayout();
+    }
+    
+    public CellScreen getCurrentCellScreen(){
+        return (CellScreen)getCurrentScreen();
+    }
+    
+    void addInScreen(View view, long screenId, int cellX, int cellY, int spanX, int spanY){
+        addInScreen(view, screenId, cellX, cellY, spanX, spanY, false);
+    }
+
+    void addInScreen(View view, long screenId, int cellX, int cellY, int spanX, int spanY, 
+            boolean insert){
+        
+    }
+    
 }
