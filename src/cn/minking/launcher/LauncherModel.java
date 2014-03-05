@@ -121,6 +121,7 @@ public class LauncherModel extends BroadcastReceiver {
     private class LoaderTask implements Runnable{
         private final ContentResolver mContentResolver;
         private Context mContext;
+        // 用来存储手机安装的APP Component
         private HashSet<ComponentName> mInstalledComponents;
         private boolean mIsJustRestoreFinished = false;
         private boolean mIsLaunching = false;
@@ -129,6 +130,9 @@ public class LauncherModel extends BroadcastReceiver {
         private PackageManager mManager = null;
         private boolean mStopped;
 
+        /**
+         * 功能： 桌面加载线程的run函数
+         */
         @Override
         public void run() {
             // 对终端用户的使用体验： 如果Launcher运行起来，在前端运行了APP，则首先装载所有的APP。否则，先装载WORKSPACE
@@ -142,11 +146,11 @@ public class LauncherModel extends BroadcastReceiver {
                 }
                 
                 mHandler.post(new Runnable() {
-                        public void run(){
-                            if (!mStopped && callbacks != null)
-                                callbacks.startLoading();
-                        }
-                    });
+                    public void run(){
+                        if (!mStopped && callbacks != null)
+                            callbacks.startLoading();
+                    }
+                });
                 Log.d(TAG, "step 1: loading workspace");
                 
                 synchronized (mLock){
@@ -233,18 +237,15 @@ public class LauncherModel extends BroadcastReceiver {
             
             HashSet<String> hashSet = new HashSet<String>();
             
-            while (iterator.hasNext()){
+            while (iterator.hasNext() && !mStopped){
                 ComponentName componentname = (ComponentName)iterator.next();
-                if (mStopped) {
-                    continue;
-                }
+                
                 if (hashSet.contains(componentname.getPackageName()) || mLoadedApps.containsKey(componentname)) {
                     continue;
                 }
                 try {
                     LauncherSettings.updateHomeScreen(mContext, componentname.getPackageName());
-                    synchronized (mAllAppsListLock)
-                    {
+                    synchronized (mAllAppsListLock) {
                         mAllAppsList.updatePackage(mContext, componentname.getPackageName());
                     }
                     hashSet.add(componentname.getPackageName());
@@ -329,9 +330,12 @@ public class LauncherModel extends BroadcastReceiver {
             runOnMainThread(r, MAIN_THREAD_BINDING_RUNNABLE);
         }
         
+        /**
+         * 功能： LOAD AND BIND WORKSPACE
+         */
         private void loadAndBindWorkspace(){
             if (!mWorkspaceLoaded) {
-                Log.d(TAG, (new StringBuilder()).append("loadAndBindWorkspace loaded=").append(mWorkspaceLoaded).toString());
+                if (LOGD) Log.d(TAG, (new StringBuilder()).append("loadAndBindWorkspace loaded=").append(mWorkspaceLoaded).toString());
                 loadWorkspace();
                 synchronized (LoaderTask.this) {
                     if (mStopped) {
@@ -361,6 +365,9 @@ public class LauncherModel extends BroadcastReceiver {
             }
         }
 
+        /**
+         * 功能： 加载 WORKSPACE
+         */
         private void loadWorkspace() {
             final long t = LOGD ? SystemClock.uptimeMillis() : 0;
             final Context context = mContext;
@@ -385,16 +392,19 @@ public class LauncherModel extends BroadcastReceiver {
                 
                 Intent intent = new Intent(Intent.ACTION_MAIN, null);
                 intent.addCategory(Intent.CATEGORY_LAUNCHER);
-                Iterator<ResolveInfo> resolveInfo = mManager.queryIntentActivities(intent, 0).iterator();
                 
+                // APP的总数
                 int appCounts = 0;
-                if (LOGD) Log.d(TAG, "MK : appCounts = " + appCounts);
                 
+                // 此处得到所有APP的包名和入口类名称，resolveInfo指向手机中所有的Package
+                Iterator<ResolveInfo> resolveInfo = mManager.queryIntentActivities(intent, 0).iterator();
                 while (resolveInfo.hasNext()) {
                     ResolveInfo rInfo = resolveInfo.next();
                     String packageName = rInfo.activityInfo.packageName;
                     String name = rInfo.activityInfo.name;
                     if (!TextUtils.isEmpty(packageName) && !TextUtils.isEmpty((CharSequence)(name))) {
+                        
+                        // 将得到的包和类名称存放到哈希表中存储
                         mInstalledComponents.add(new ComponentName(packageName, name));
                         appCounts++;
                         if (LOGD) Log.d(TAG, "MK : pack: " + packageName + "name: " + name);
@@ -409,19 +419,29 @@ public class LauncherModel extends BroadcastReceiver {
                 
                 // ITEM 的 ID 列表
                 ArrayList<Long> idList = new ArrayList<Long>();
+                // ITEM 列表
                 ArrayList<ItemInfo> itemList = new ArrayList<ItemInfo>();
-                //Uri joinUri = LauncherSettings.Favorites.getJoinContentUri(" JOIN screens ON favorites.screen=screens._id");
+                
+                // Query筛选项
                 String columns[] = ItemQuery.COLUMNS;
-                String containerSel[] = new String[1];
-                containerSel[0] = String.valueOf(LauncherSettings.Favorites.CONTAINER_DESKTOP);
+                String containerSelDestop[] = new String[]{String.valueOf(LauncherSettings.Favorites.CONTAINER_DESKTOP)};
                 
-                //loadItems(contentResolver.query(joinUri, aString1, "container=?", aString3, "screens.screenOrder ASC, celly ASC, cellX ASC, itemType ASC"), 
-                //      arrayList, arrayList2);
+                Uri joinUri = LauncherSettings.Favorites.getJoinContentUri(" JOIN screens ON favorites.screen=screens._id");
                 
+                // 数据库Uri
                 Uri uri = LauncherSettings.Favorites.CONTENT_URI;
-                loadItems(contentResolver.query(uri, columns, "container!=?", containerSel, null), idList, itemList);
+                
+                // 1. 首先读取桌面容器中的ITEM
+                loadItems(contentResolver.query(joinUri, columns, "container=?", containerSelDestop, "screens.screenOrder ASC, cellY ASC, cellX ASC, itemType ASC"), idList, itemList);
+                
+                // 选择筛选项， 此两项详细请看URI的query方法
+                String containerSelHotseat[] = new String[]{String.valueOf(LauncherSettings.Favorites.CONTAINER_HOTSEAT)};
+                
+                // 2. 再读取HOTSEAT容器中的ITEM
+                loadItems(contentResolver.query(uri, columns, "container=?", containerSelHotseat, null), idList, itemList);
                 ContentProviderClient contentProviderClient = mContentResolver.acquireContentProviderClient(LauncherSettings.Favorites.CONTENT_URI);
                 
+                Log.d(TAG, "MK : idList size " + idList.size() + " itemList size " + itemList.size());
                 if (!idList.isEmpty()) {
                     for (Iterator<Long> iterator = idList.iterator(); iterator.hasNext();) {
                         long id = (iterator.next()).longValue();
@@ -446,6 +466,7 @@ public class LauncherModel extends BroadcastReceiver {
                             iterator.hasNext();){
                         stringBuilder.append(((ItemInfo)iterator.next()).id).append(',');
                     }
+                    stringBuilder.setCharAt(stringBuilder.length() - 1, ')');
                     
                     try {
                         contentProviderClient.update(LauncherSettings.Favorites.CONTENT_URI, contentValues, stringBuilder.toString(), null);
@@ -478,188 +499,106 @@ public class LauncherModel extends BroadcastReceiver {
                         && (iteminfo.cellY >= 0 && ((iteminfo.cellY + iteminfo.spanY) < ResConfig.getCellCountY()))))
                         && (iteminfo.container != LauncherSettings.Favorites.CONTAINER_HOTSEAT 
                             || (iteminfo.cellX >= 0 && iteminfo.cellX < ResConfig.getHotseatCount()))) {
-                flag = false;
-            }else {
                 flag = true;
+            }else {
+                flag = false;
             }
             return flag;
         }
         
         private boolean ensureItemUniquePostiton(Context context, Long id, int i){
-            return false;
-        }
-        
-        public Bitmap getFallbackIcon(){
-            return Bitmap.createBitmap(mIconCache.getDefaultIcon());
-        }
-
-        Bitmap getIconFromCursor(Cursor cursor, int iconIndex){
-            if (LOGD) {
-                Log.d(TAG, "getIconFromCursor app="
-                        + cursor.getString(cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.TITLE)));
-            }
-            byte[] data = cursor.getBlob(iconIndex);
-            if (data == null) {
-                return null;
-            }
+            Boolean flag = false;
             try {
-                return BitmapFactory.decodeByteArray(data, 0, data.length);
-            } catch (Exception e) {
-                return null;
-            }
-        }
-        
-        public ShortcutInfo getShortcutInfo(PackageManager packageManager, Intent intent, 
-                Context context, Cursor cursor, int iType, int iTitle){
-            Bitmap bitmap = null;
-            ShortcutInfo shortcutInfo = new ShortcutInfo();
-            ComponentName componentName = intent.getComponent();
-            
-            if (componentName != null) {
-                ResolveInfo resolveInfo = packageManager.resolveActivity(intent, 0);
-                if (resolveInfo != null) {
-                    bitmap = mIconCache.getIcon(componentName, resolveInfo);
+                Bundle bundle = context.getContentResolver().
+                        acquireContentProviderClient(LauncherSettings.Favorites.CONTENT_URI).
+                        call("ensureItemUniquePosition", Long.toString(id.longValue()), null);
+                if (bundle == null) {
+                    flag = false;
+                }else {
+                    flag = bundle.getBoolean("resultBoolean");
                 }
-                if (bitmap == null && cursor != null) {
-                    bitmap = getIconFromCursor(cursor, iType);
-                }
-                if (bitmap == null) {
-                    bitmap = getFallbackIcon();
-                    shortcutInfo.usingFallbackIcon = true;
-                }
-                shortcutInfo.setIcon(bitmap);
-                if (resolveInfo != null) {
-                    shortcutInfo.title = resolveInfo.activityInfo.loadLabel(packageManager);
-                }
-                if (shortcutInfo.title == null && cursor != null) {
-                    shortcutInfo.title = cursor.getString(iTitle);
-                }
-                if (shortcutInfo.title == null) {
-                    shortcutInfo.title = componentName.getClassName();
-                }
-            }else {
-                shortcutInfo = null;
-            }
-            return shortcutInfo;
-        }
-        
-        public ShortcutInfo getShortcutInfo(Intent intent, Cursor cursor, Context context, 
-                int iIconType, int iIconPackage, int iIconResource, int iIcon, int iTitle){
-            Bitmap bitmap = null;
-            ShortcutInfo shortcutInfo = new ShortcutInfo();
-            shortcutInfo.itemType = 1;
-            shortcutInfo.itemFlags = cursor.getInt(19);
-            shortcutInfo.title = cursor.getString(iTitle);
-            shortcutInfo.mIconType = cursor.getInt(iIconType);
-            switch(shortcutInfo.mIconType){
-            case LauncherSettings.Favorites.ICON_TYPE_RESOURCE:
-                String packageName = cursor.getString(iIconPackage);
-                String resourceName = cursor.getString(iIconResource);
-                PackageManager packageManager = context.getPackageManager();
-                if (context.getPackageName().equals(packageName))
-                    shortcutInfo.isRetained = true;
+            } catch (RemoteException remoteException) {
                 
-                try {
-                    Resources resources = packageManager.getResourcesForApplication(packageName);
-                    if (resources != null) {
-                        final int id = resources.getIdentifier(resourceName, null, null);
-                        bitmap = Utilities.createIconBitmap(
-                                resources.getDrawable(id), context);
-                    }
-                } catch (Exception e) {
-                    // drop this.  we have other places to look for icons
-                }
-                // the db
-                if (bitmap == null) {
-                    bitmap = getIconFromCursor(cursor, iIcon);
-                }
-                // the fallback icon
-                if (bitmap == null) {
-                    bitmap = getFallbackIcon();
-                    shortcutInfo.usingFallbackIcon = true;
-                }
-                break;
-            case LauncherSettings.Favorites.ICON_TYPE_BITMAP:
-                bitmap = getIconFromCursor(cursor, iIcon);
-                if (bitmap == null) {
-                    bitmap = getFallbackIcon();
-                    shortcutInfo.usingFallbackIcon = true;
-                }
-                break;
-            case 2:
-                //shortcutInfo.intent = intent;
-                //shortcutInfo.loadContactInfo(context);
-                break;
-            case 3:
-                //shortcutInfo.intent = intent;
-                //shortcutInfo.loadToggleInfo(context);
-                break;
-            default:
-                bitmap = getFallbackIcon();
-                shortcutInfo.usingFallbackIcon = true;
-                break;
             }
-            if (2 != shortcutInfo.mIconType && 3 != shortcutInfo.mIconType){
-                shortcutInfo.setIcon(bitmap);
-                shortcutInfo.wrapIconWithBorder(context);
-            }
-            
-            return shortcutInfo;
+            return flag;
         }
-        
         
         private void loadShortcut(Cursor cursor, int itemType, ArrayList<Long> idList, ArrayList<ItemInfo> itemList){
-            if (cursor == null) {
-                return;
-            }
+            if (cursor == null) return;
+            
             Intent intent;
             ShortcutInfo shortcutInfo;
-            int idIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites._ID);
-            int classNameIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.INTENT);
+            String intentDescription;
             
             try {
+                // 找到各项在数据表中的Index值
+                final int idIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites._ID);
+                final int intentIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.INTENT);
+                final int titleIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.TITLE);
+                final int iconTypeIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.ICON_TYPE);
+                final int iconIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.ICON);
+                final int iconPackageIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.ICON_PACKAGE);
+                final int iconResourceIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.ICON_RESOURCE);
+                final int containerIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.CONTAINER);
+                final int itemTypeIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.ITEM_TYPE);
+                final int appWidgetIdIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.APPWIDGET_ID);
+                final int screenIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.SCREEN);
+                final int cellXIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.CELLX);
+                final int cellYIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.CELLY);
+                final int spanXIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.SPANX);
+                final int spanYIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.SPANY);
+                
+                // 获取Intent信息
+                intentDescription = cursor.getString(intentIndex);
+                intent = Intent.parseUri(intentDescription, 0);
+                // 获取ID
                 long id = cursor.getLong(idIndex);
-                if (ensureItemUniquePostiton(mContext, Long.valueOf(id), 0)){
+                
+                if (id == 0) return; 
+                
+                ComponentName componentName = intent.getComponent();
+                
+                // 如果读取的包入口不在Installed的HASH表中则返回
+                if (!mInstalledComponents.contains(componentName) 
+                        && !LauncherSettings.isRetainedComponent(componentName)){
                     return;
                 }
-                intent = Intent.parseUri(cursor.getString(classNameIndex), 0);
-                if (itemType != LauncherSettings.Favorites.ITEM_TYPE_APPLICATION) {
-                    ComponentName componentName = intent.getComponent();
-                    if (mInstalledComponents.contains(componentName) 
-                            || LauncherSettings.isRetainedComponent(componentName)){
-                        
-                    }
-                    
+                
+                if (itemType == LauncherSettings.Favorites.ITEM_TYPE_APPLICATION) {
                     try{
-                        if (mContext.getPackageManager().getPackageGids((componentName).getPackageName()).length != 0){
+                        if (mContext.getPackageManager().getPackageGids(componentName.getPackageName()).length != 0){
                             idList.add(Long.valueOf(id));
-                            Log.w(TAG, (new StringBuilder()).
+                            if (LOGD) Log.w(TAG, (new StringBuilder()).
                                     append("Remove:").append(componentName).
                                     append(",package updated but current class does not exist.").toString());
                         }
-                    }
-                    catch (NameNotFoundException ex) { 
+                    } catch (NameNotFoundException ex) { 
                         Log.w(TAG, "package not finded" + componentName);
                     }
+                    
                     if (mIsJustRestoreFinished){
-                        Log.e(TAG, (new StringBuilder()).append("Restored:").
+                        if (LOGD) Log.e(TAG, (new StringBuilder()).append("Restored:").
                                 append(componentName).append(",doesn't exist anymore,removing it.").toString());
                         idList.add(Long.valueOf(id));
                     }
                 }
                 
+                // 确保每个ITEM拥有唯一的POS
+                if (!ensureItemUniquePostiton(mContext, Long.valueOf(id), 0)){
+                    return;
+                }
+                
                 if(itemType == LauncherSettings.Favorites.ITEM_TYPE_APPLICATION){
                     shortcutInfo = getShortcutInfo(mManager, intent, mContext, cursor, 
-                            colToInt(ItemQuery.COL.ITEMTYPE), colToInt(ItemQuery.COL.TITLE));
-                    if (shortcutInfo != null && mLoadedApps.containsKey(intent.getComponent()))
+                            iconIndex, titleIndex);
+                    if (shortcutInfo != null && mLoadedApps.containsKey(intent.getComponent())){
                         shortcutInfo = null;
-                    else
+                    } else {
                         mLoadedApps.put(intent.getComponent(), Long.valueOf(id));
+                    }
                 } else {
                     shortcutInfo = getShortcutInfo(intent, cursor, mContext, 
-                            colToInt(ItemQuery.COL.ICONTYPE), colToInt(ItemQuery.COL.ICONPACKAGE),
-                            colToInt(ItemQuery.COL.ICONRESOURCE), colToInt(ItemQuery.COL.ICON),
-                            colToInt(ItemQuery.COL.TITLE));
+                            iconTypeIndex, iconPackageIndex, iconResourceIndex, iconIndex, titleIndex);
                 }
                 
                 if (shortcutInfo != null) {
@@ -676,6 +615,12 @@ public class LauncherModel extends BroadcastReceiver {
                         LauncherModel.findOrMakeUserFolder(mFolders, shortcutInfo.container).add(shortcutInfo);
                     }
                     onLoadShortcut(shortcutInfo);
+                } else {
+                    // 如果装载失败，那么删除掉这个ID对应的项
+                    id = cursor.getLong(idIndex);
+                    Log.e(TAG, "Error loading shortcut " + id + ", removing it");
+                    mContentResolver.delete(LauncherSettings.Favorites.getContentUri(
+                                id), null, null);
                 }
                 
                 if (shortcutInfo == null) {
@@ -685,11 +630,6 @@ public class LauncherModel extends BroadcastReceiver {
             } catch (URISyntaxException e) {
                 
             }
-
-            
-            
-            
-            
         }
         
         private void loadFolder(Cursor cursor, ArrayList<ItemInfo> itemList){
@@ -744,10 +684,15 @@ public class LauncherModel extends BroadcastReceiver {
             cursor.close();
         }
         
+        /**
+         * 功能： 调用到LauncherProvider的call 函数，返回Bundle数据
+         * @param context
+         */
         private void updateInstalledComponentsArg(Context context){
-            Bundle bundle;
             try {
-                bundle = context.getContentResolver().acquireContentProviderClient(LauncherSettings.Favorites.CONTENT_URI).call("updateInstalledComponentsArg", null, null);
+                context.getContentResolver().
+                        acquireContentProviderClient(LauncherSettings.Favorites.CONTENT_URI).
+                        call("updateInstalledComponentsArg", null, null);
             } catch (RemoteException e) {
                 // TODO Auto-generated catch block
                 e.printStackTrace();
@@ -826,6 +771,11 @@ public class LauncherModel extends BroadcastReceiver {
             }
         }
         
+        /**
+         * 功能： 获取回调函数接口
+         * @param oldCallbacks
+         * @return
+         */
         Callbacks tryGetCallbacks(Callbacks oldCallbacks){
             synchronized (mLock) {
                 if (mStopped) {
@@ -1024,14 +974,15 @@ public class LauncherModel extends BroadcastReceiver {
         }
     }
     
-    public void startLoader(boolean isLaunching, int synchronousBindPage) {
+    public void startLoader(Context context, boolean isLaunching) {
         synchronized (mLock) {
             // 如果线程没有任何作用则不进入调用节省时间及资源
             if (mCallbacks != null && mCallbacks.get() != null) {
                 // 如果已经有一个线程在运行则通知停止已经在运行的线程
                 isLaunching = isLaunching || stopLoaderLocked();
                 
-                mLoaderTask = new LoaderTask(mApp, isLaunching, true);
+                mLoaderTask = new LoaderTask(mApp, isLaunching, 
+                        ((LauncherApplication)context.getApplicationContext()).isJustRestoreFinished());
                 
                 sWorkerThread.setPriority(Thread.NORM_PRIORITY);
                 sWorker.post(mLoaderTask);
@@ -1110,6 +1061,126 @@ public class LauncherModel extends BroadcastReceiver {
 
     }
     
+    public Bitmap getFallbackIcon(){
+        return Bitmap.createBitmap(mIconCache.getDefaultIcon());
+    }
+
+    public Bitmap getIconFromCursor(Cursor cursor, int iconIndex){
+        if (LOGD) {
+            Log.d(TAG, "getIconFromCursor app="
+                    + cursor.getString(cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.TITLE)));
+        }
+        byte[] data = cursor.getBlob(iconIndex);
+        if (data == null) {
+            return null;
+        }
+        try {
+            return BitmapFactory.decodeByteArray(data, 0, data.length);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+    
+    public ShortcutInfo getShortcutInfo(PackageManager packageManager, Intent intent, 
+            Context context, Cursor cursor, int iconIndex, int iTitle){
+        Bitmap bitmap = null;
+        ShortcutInfo shortcutInfo = new ShortcutInfo();
+        ComponentName componentName = intent.getComponent();
+        
+        if (componentName != null) {
+            ResolveInfo resolveInfo = packageManager.resolveActivity(intent, 0);
+            if (resolveInfo != null) {
+                bitmap = mIconCache.getIcon(componentName, resolveInfo);
+            }
+            if (bitmap == null && cursor != null) {
+                bitmap = getIconFromCursor(cursor, iconIndex);
+            }
+            if (bitmap == null) {
+                bitmap = getFallbackIcon();
+                shortcutInfo.usingFallbackIcon = true;
+            }
+            shortcutInfo.setIcon(bitmap);
+            if (resolveInfo != null) {
+                shortcutInfo.title = resolveInfo.activityInfo.loadLabel(packageManager);
+            }
+            if (shortcutInfo.title == null && cursor != null) {
+                shortcutInfo.title = cursor.getString(iTitle);
+            }
+            if (shortcutInfo.title == null) {
+                shortcutInfo.title = componentName.getClassName();
+            }
+        } else {
+            shortcutInfo = null;
+        }
+        shortcutInfo.itemType = LauncherSettings.Favorites.ITEM_TYPE_APPLICATION;
+        return shortcutInfo;
+    }
+    
+    public ShortcutInfo getShortcutInfo(Intent intent, Cursor cursor, Context context, 
+            int iIconType, int iIconPackage, int iIconResource, int iIcon, int iTitle){
+        Bitmap bitmap = null;
+        ShortcutInfo shortcutInfo = new ShortcutInfo();
+        shortcutInfo.itemType = LauncherSettings.Favorites.ITEM_TYPE_SHORTCUT;
+        shortcutInfo.itemFlags = cursor.getInt(LauncherModel.colToInt(ItemQuery.COL.ITEMFLAGS));
+        shortcutInfo.title = cursor.getString(iTitle);
+        shortcutInfo.mIconType = cursor.getInt(iIconType);
+        switch(shortcutInfo.mIconType){
+        case LauncherSettings.Favorites.ICON_TYPE_RESOURCE:
+            String packageName = cursor.getString(iIconPackage);
+            String resourceName = cursor.getString(iIconResource);
+            PackageManager packageManager = context.getPackageManager();
+            if (context.getPackageName().equals(packageName))
+                shortcutInfo.isRetained = true;
+            
+            try {
+                Resources resources = packageManager.getResourcesForApplication(packageName);
+                if (resources != null) {
+                    final int id = resources.getIdentifier(resourceName, null, null);
+                    bitmap = Utilities.createIconBitmap(
+                            resources.getDrawable(id), context);
+                }
+            } catch (Exception e) {
+                // drop this.  we have other places to look for icons
+            }
+            // the db
+            if (bitmap == null) {
+                bitmap = getIconFromCursor(cursor, iIcon);
+            }
+            // the fallback icon
+            if (bitmap == null) {
+                bitmap = getFallbackIcon();
+                shortcutInfo.usingFallbackIcon = true;
+            }
+            break;
+        case LauncherSettings.Favorites.ICON_TYPE_BITMAP:
+            bitmap = getIconFromCursor(cursor, iIcon);
+            if (bitmap == null) {
+                bitmap = getFallbackIcon();
+                shortcutInfo.usingFallbackIcon = true;
+            }
+            break;
+        case 2:
+            //shortcutInfo.intent = intent;
+            //shortcutInfo.loadContactInfo(context);
+            break;
+        case 3:
+            //shortcutInfo.intent = intent;
+            //shortcutInfo.loadToggleInfo(context);
+            break;
+        default:
+            bitmap = getFallbackIcon();
+            shortcutInfo.usingFallbackIcon = true;
+            break;
+        }
+        if (LauncherSettings.Favorites.ITEM_TYPE_FOLDER != shortcutInfo.mIconType 
+                && LauncherSettings.Favorites.ITEM_TYPE_LIVE_FOLDER != shortcutInfo.mIconType){
+            shortcutInfo.setIcon(bitmap);
+            shortcutInfo.wrapIconWithBorder(context);
+        }
+        
+        return shortcutInfo;
+    }
+    
     public void updateSavedIcon(Context context, ShortcutInfo shortcutinfo, Cursor cursor, int iconIndex){
         boolean needSave = true;
         if (!shortcutinfo.onExternalStorage 
@@ -1175,18 +1246,6 @@ public class LauncherModel extends BroadcastReceiver {
     
     public AllAppsList getAllAppsList() {
         return mAllAppsList;
-    }
-    
-    public ShortcutInfo getShortcutInfo(Intent intent, Cursor cursor, Context context, 
-            int iconTypeIndex, int iconPackageIndex, int iconResourceIndex, int iconIndex, int titleIndex){
-        ShortcutInfo shortcutInfo = new ShortcutInfo();;
-        return shortcutInfo;
-    }
-    
-    public ShortcutInfo getShortcutInfo(PackageManager packagemanager, Intent intent, 
-            Context context, Cursor cursor, int iconIndex, int titleIndex){
-        ShortcutInfo shortcutinfo = new ShortcutInfo();
-        return shortcutinfo;
     }
     
     public static int colToInt(ItemQuery.COL col){

@@ -15,15 +15,16 @@ import android.util.AttributeSet;
 public class HotSeatButton extends OnLongClickWrapper{
     private ItemIcon mIcon;
 
-    public HotSeatButton(Context context, AttributeSet attributeset)
-    {
+    public HotSeatButton(Context context, AttributeSet attributeset){
         super(context, attributeset);
         mIcon = null;
     }
     
     public void bind(ItemIcon itemicon, DragController dragcontroller){
         mIcon = itemicon;
-        addView(itemicon, 0);
+        
+        // 构建一个FrameLayout， 将HOT Seat中的各个ItemIcon加人到Layout中
+        addView(itemicon);
         if (itemicon instanceof DropTarget) {
             dragcontroller.addDropTarget((DropTarget)itemicon);
         }
@@ -35,6 +36,10 @@ public class HotSeatButton extends OnLongClickWrapper{
      */
     public ItemIcon getIcon() {
         return mIcon;
+    }
+    
+    public boolean preventPressState(){
+        return true;
     }
     
     public void unbind(DragController dragController) {

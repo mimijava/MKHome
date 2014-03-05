@@ -10,6 +10,7 @@ package cn.minking.launcher;
  * ====================================================================================
  */
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.util.AttributeSet;
 import android.view.LayoutInflater;
 import android.view.ViewGroup;
@@ -30,5 +31,7 @@ public class FolderIcon extends ItemIcon
         return true;
     }
     
-    
+    public static final Bitmap loadFolderIconBitmap()    {
+        return null;
+    }
 }

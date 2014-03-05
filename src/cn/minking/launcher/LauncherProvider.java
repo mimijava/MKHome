@@ -9,8 +9,10 @@ package cn.minking.launcher;
  * 20140228: 数据存储类
  * ====================================================================================
  */
+import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
+import java.io.FilenameFilter;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -34,7 +36,11 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.SharedPreferences.Editor;
 import android.content.pm.ActivityInfo;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.content.res.AssetManager;
+import android.content.res.Resources;
 import android.content.res.TypedArray;
 import android.content.res.XmlResourceParser;
 import android.database.Cursor;
@@ -42,7 +48,10 @@ import android.database.SQLException;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 import android.database.sqlite.SQLiteQueryBuilder;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
 import android.net.Uri;
+import android.os.Bundle;
 import android.preference.PreferenceManager;
 import android.text.TextUtils;
 import android.util.AttributeSet;
@@ -241,6 +250,21 @@ public class LauncherProvider extends ContentProvider {
             
         }
     }
+    /**
+     * 功能： Provider的代理Client的call函数， LauncherModel中使用
+     */
+    public Bundle call(String cmd, String id, Bundle bundle){
+        Bundle bd = null;
+        if (cmd.equals("updateInstalledComponentsArg")) {
+            ScreenUtils.updateInstalledComponentsArg(getContext());
+        }else {
+            if (ScreenUtils.verifyItemPosition(sOpenHelper.getWritableDatabase(), Long.parseLong(id))){
+                bd = new Bundle();
+                bd.putBoolean("resultBoolean", true);       
+            }
+        }
+        return bd;
+    }
     
     public long generateNewId(){
         return sOpenHelper.generateNewId();
@@ -411,13 +435,15 @@ public class LauncherProvider extends ContentProvider {
         
         private final Context mContext;
         private final AppWidgetHost mAppWidgetHost;
-        private long mMaxId = -1;
+        private long mMaxId;
+        private long mPresetsContainerId;
         
         DatabaseHelper(Context context) {
             super(context, DATABASE_NAME, null, DATABASE_VERSION);
             mContext = context;
+            mMaxId = -1L;
+            mPresetsContainerId = -1L;
             mAppWidgetHost = new AppWidgetHost(context, Launcher.APPWIDGET_HOST_ID);
-            
             if (mMaxId == -1) {
                 mMaxId = initializeMaxId(getWritableDatabase());
             }
@@ -684,6 +710,7 @@ public class LauncherProvider extends ContentProvider {
                     } else if (TAG_SHORTCUT.equals(name)) {
                         added = addUriShortcut(db, contentValues, fakedTypedArray);
                     } else if (TAG_FOLDER.equals(name)) {
+                        //folder属性里面的参数要多于2个，才能形成文件夹。
                         added = addFolder(db, contentValues, fakedTypedArray);
                     }
                     
@@ -702,16 +729,148 @@ public class LauncherProvider extends ContentProvider {
         
         private int loadPresetsApps(SQLiteDatabase db){
             int k = 0;
+            if (mPresetsContainerId >= 0L) {
+                File file;
+                file = new File("/data/media/preset_apps");
+                if (!file.isDirectory()){
+                    return k;
+                }
+            
+                File aFile[] = file.listFiles(new FilenameFilter() {
+                    @Override
+                    public boolean accept(File dir, String filename) {
+                        return filename.toLowerCase().endsWith(".apk");
+                    }
+                });
+                
+                if (aFile == null) {
+                    return k;
+                }
+                
+                int length = aFile.length;
+                
+                if (length <= 0) {
+                    return k;
+                }
+                
+                Resources resources = mContext.getResources();;
+                PackageManager packagemanager = mContext.getPackageManager();
+                Intent intent = new Intent(Intent.ACTION_VIEW);
+                ContentValues contentvalues = new ContentValues();
+                
+                int i = 0;
+                while (i < length) {
+                    File fileT = aFile[i];
+                    PackageInfo packageinfo = packagemanager.getPackageArchiveInfo(fileT.getAbsolutePath(), PackageManager.PERMISSION_GRANTED);;
+                    if (packageinfo == null){
+                        break;
+                    }
+                    ApplicationInfo aInfo = packageinfo.applicationInfo;
+                    
+                    try {
+                        AssetManager assetManager = resources.getAssets();
+                        assetManager.list(fileT.getAbsolutePath());
+                        Resources resourcesT = new Resources(assetManager, resources.getDisplayMetrics(), resources.getConfiguration());
+                        assetManager = null;
+                        
+                        if (packageinfo.applicationInfo.labelRes == 0){
+                            break;
+                        }
+                        
+                        CharSequence label = resourcesT.getText(aInfo.labelRes);
+                        if (label == null) {
+                            if (aInfo.nonLocalizedLabel != null)
+                                label = aInfo.nonLocalizedLabel;
+                            else
+                                label = aInfo.packageName;
+                        }
+                        
+                        if (aInfo.icon == 0) {
+                            break;
+                        }
+                        
+                        Drawable drawable = resourcesT.getDrawable(aInfo.icon);
+                        
+                        if (drawable == null) {
+                            drawable = mContext.getPackageManager().getDefaultActivityIcon();
+                        }
+                        
+                        if (drawable != null && label != null) {
+                            contentvalues.put("title", label.toString());
+                            contentvalues.put("container", Long.valueOf(mPresetsContainerId));
+                            contentvalues.put("iconPackage", packageinfo.packageName);
+                            contentvalues.put("spanX", Integer.valueOf(1));
+                            contentvalues.put("spanY", Integer.valueOf(1));
+                            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+                            intent.setDataAndType(Uri.fromFile(fileT), MimeUtils.guessMimeTypeFromExtension("apk"));
+                            contentvalues.put("intent", intent.toUri(0));
+                            contentvalues.put("itemType", Integer.valueOf(1));
+                            contentvalues.put("itemFlags", Integer.valueOf(1));
+                            contentvalues.put("iconType", Integer.valueOf(1));
+                            ItemInfo.writeBitmap(contentvalues, ((BitmapDrawable)drawable).getBitmap());
+                            db.insert("favorites", null, contentvalues);
+                            contentvalues.clear();
+                                k++;
+                        }
+                    } catch (Exception e) {
+                        // TODO: handle exception
+                    }
+                    i++;
+                }
+            }
             return k;
         }
         
         private void createScreensTable(SQLiteDatabase db){
+            Cursor cursor;
             
+            // 创建 screens 数据库表
+            db.execSQL("DROP TABLE IF EXISTS screens");
+            db.execSQL("CREATE TABLE screens("
+                    + "_id INTEGER PRIMARY KEY,"
+                    + "title TEXT,"
+                    + "screenOrder INTEGER NOT NULL DEFAULT -1);");
+            String columns[] = new String[]{"MAX(screen)"};
+            
+            cursor = db.query("favorites", columns, null, null, null, null, null);
+            if (cursor == null) {
+                return;
+            }
+            
+            try {
+                ContentValues contentValues;
+                int j;
+                long al[];
+                if (cursor.moveToNext()) {
+                    j = cursor.getInt(0) + 1;
+                    
+                    al = new long[j];
+                    contentValues = new ContentValues();
+                    for (int i = 0; i < j; i++) {
+                        contentValues.clear();
+                        contentValues.put("screenOrder", Integer.valueOf(i));
+                        al[i] = db.insert("screens", null, contentValues);
+                    }
+                    j--;
+                    if (j >= 0) {
+                        contentValues.clear();
+                        contentValues.put("screen", Long.valueOf(al[j]));
+                        String selString[] = new String[]{String.valueOf(j)};
+                        
+                        db.update("favorites", contentValues, "screen=?", selString);   
+                    }
+                }   
+            } catch (Exception e) {
+                cursor.close();
+            }
+            cursor.close();
         }
 
         @Override
         public void onCreate(SQLiteDatabase db) {
             mMaxId = 1L;
+            
+            // 创建 favorites 数据库表
             db.execSQL("DROP TABLE IF EXISTS favorites");
             db.execSQL("CREATE TABLE favorites("
                     + "_id INTEGER PRIMARY KEY,"
@@ -753,8 +912,16 @@ public class LauncherProvider extends ContentProvider {
         }
         
         private long initializeMaxId(SQLiteDatabase db) {
-            long id = -1;
-            return id;
+            long id = -1L;
+            Cursor cursor = db.rawQuery("SELECT MAX(_id) FROM favorites", null);
+            if (cursor != null && cursor.moveToNext())
+                id = cursor.getLong(0);
+            if (cursor != null)
+                cursor.close();
+            if (id != -1L)
+                return id;
+            else
+                throw new RuntimeException("Error: could not query max id");
         }
 
         public int loadFavorites(SQLiteDatabase db, int workspaceResourceId) {
@@ -774,6 +941,7 @@ public class LauncherProvider extends ContentProvider {
                 db.endTransaction();
             }
         }
+        
         public long generateNewId(){
             if (mMaxId >= 0L){
                 mMaxId = 1L + mMaxId;

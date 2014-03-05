@@ -10,29 +10,47 @@ package cn.minking.launcher;
  * ====================================================================================
  */
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 
 import android.content.ContentValues;
 import android.database.Cursor;
 import android.graphics.Bitmap;
+import android.util.Log;
 
 public class ItemInfo implements Cloneable {
+    static final String TAG = "MKHome.Launcher";
+    /// M:  cX 图标X位置,左上角第一个为0,向左递增,0-N共 N 值根据屏幕分辨率及大小决定
+    ///     cY 图标Y位置,左上角第一个为0,向下递增,0-N共 N 值根据屏幕分辨率及大小决定 
+
     public int cellX;
     public int cellY;
+    
+    /// M:  sX 在x方向上所占格数
+    /// M:  sY 在x方向上所占格数
+    public int spanX;
+    public int spanY;
+
+    static final long NO_ID = -1L;
+    /// M: container标识处于WORKSPACE还是HOTSEAT，暂时分为这两种
     public long container;
+    
+    /// M: id 标识
     public long id;
+    
+    /// M： 图标所在的屏幕编号
+    public long screenId;
+
     public boolean isGesture;
     public boolean isRetained;
     public int itemFlags;
     public int itemType;
     public int launchCount;
-    public long screenId;
-    public int spanX;
-    public int spanY;
+    
 
     public ItemInfo(){
-        id = -1L;
-        container = -1L;
-        screenId = -1L;
+        id = NO_ID;
+        container = NO_ID;
+        screenId = NO_ID;
         cellX = -1;
         cellY = -1;
         spanX = 1;
@@ -43,25 +61,34 @@ public class ItemInfo implements Cloneable {
     }
     
     public static byte[] flattenBitmap(Bitmap bitmap){
-        ByteArrayOutputStream bytearrayoutputstream = new ByteArrayOutputStream();
-        bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, bytearrayoutputstream);
-        return bytearrayoutputstream.toByteArray();
+        // Try go guesstimate how much space the icon will take when serialized
+        // to avoid unnecessary allocations/copies during the write.
+        int size = bitmap.getWidth() * bitmap.getHeight() * 4;
+        ByteArrayOutputStream out = new ByteArrayOutputStream(size);
+        try {
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out);
+            out.flush();
+            out.close();
+            return out.toByteArray();
+        } catch (IOException e) {
+            Log.w(TAG, "Could not write icon");
+            return null;
+        }
     }
 
-    public static void writeBitmap(ContentValues contentvalues, Bitmap bitmap){
-        if (bitmap != null)
-            contentvalues.put("icon", flattenBitmap(bitmap));
+    public static void writeBitmap(ContentValues values, Bitmap bitmap){
+        if (bitmap != null){
+            byte[] data = flattenBitmap(bitmap);
+            values.put(LauncherSettings.Favorites.ICON, data);
+        }
     }
 
     @Override
     public ItemInfo clone(){
         ItemInfo iteminfo;
-        try
-        {
+        try {
             iteminfo = (ItemInfo)super.clone();
-        }
-        catch (CloneNotSupportedException _ex)
-        {
+        } catch (CloneNotSupportedException _ex) {
             throw new AssertionError();
         }
         return iteminfo;
@@ -138,12 +165,13 @@ public class ItemInfo implements Cloneable {
     }
     
     public void onLaunch(){
-        launchCount = 1 + launchCount;
+        launchCount += 1;
     }
 
     public String toString(){
-        return (new StringBuilder()).append("Item(id=")
-                .append(id).append(" type=").append(itemType).append(")").toString();
+        return "Item(id=" + this.id + " type=" + this.itemType + " container=" + this.container
+                + " screen=" + screenId + " cellX=" + cellX + " cellY=" + cellY + " spanX=" + spanX
+                    + " spanY=" + spanY + ")";
     }
 
     public void unbind(){

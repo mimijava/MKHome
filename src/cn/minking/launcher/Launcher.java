@@ -19,6 +19,7 @@ import cn.minking.launcher.gadget.GadgetInfo;
 import cn.minking.launcher.upsidescene.SceneData;
 import android.app.Activity;
 import android.app.WallpaperManager;
+import android.content.ComponentName;
 import android.content.ContentResolver;
 import android.content.Intent;
 import android.graphics.Point;
@@ -86,8 +87,12 @@ public class Launcher extends Activity implements OnClickListener,
         localWindow.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
         //mIsHardwareAccelerated = ((Window)(localWindow)).getWindowManager().isHardwareAccelerated();
         LauncherApplication launcherApplication = (LauncherApplication)getApplication();
+        
+        // MODEL与 LAUNCHER APP 绑定
         mModel = launcherApplication.setLauncher(this);
         mIconCache = launcherApplication.getIconCache();
+
+        // 分配拖动控制器 
         mDragController = new DragController(this);
         registerContentObservers();
         setWallpaperDimension();
@@ -95,6 +100,7 @@ public class Launcher extends Activity implements OnClickListener,
         
         mPaused = false;
         
+        // 设置Launcher布局
         setContentView(R.layout.launcher);
         setupViews();
         
@@ -107,10 +113,10 @@ public class Launcher extends Activity implements OnClickListener,
             mIsLoadingWorkspace = true;
             if (sPausedFromUserAction) {
                 // 如果用户离开了launcher， 只需要在回到launcher的时候异步的完成装载
-                mModel.startLoader(true, -1);
+                mModel.startLoader(getApplicationContext(), true);
             } else {
                 // 如果用户旋转屏幕或更改配置，则同步装载
-                mModel.startLoader(true, mWorkspace.getCurrentPage());
+                mModel.startLoader(getApplicationContext(), true);
             }
         }
     }
@@ -252,6 +258,14 @@ public class Launcher extends Activity implements OnClickListener,
         workspace.setLauncher(this);
     }
 
+    public IconCache getIconCache(){
+        return mIconCache;
+    }
+    
+    public void bindAppMessage(ShortcutIcon shortcuticon, ComponentName componentname){
+        //mApplicationsMessage.addApplication(shortcuticon, componentname);
+    }
+    
     /**
      * 功能：  获取Drag控制器
      * @return
@@ -284,14 +298,19 @@ public class Launcher extends Activity implements OnClickListener,
         return foldericon;
     }
     
+    /**
+     * 功能： 以Layout application为样式创建快捷方式的布局
+     * @param viewgroup
+     * @param shortcutinfo
+     * @return
+     */
     private ShortcutIcon createShortcutIcon(ViewGroup viewgroup, ShortcutInfo shortcutinfo){
         return ShortcutIcon.fromXml(R.layout.application, this, viewgroup, shortcutinfo);
     }
     
     public ItemIcon createItemIcon(ViewGroup viewgroup, ItemInfo iteminfo){
         ItemIcon itemIcon;
-        if (!(iteminfo instanceof ShortcutInfo) 
-                && (iteminfo instanceof FolderInfo)) {
+        if (iteminfo instanceof FolderInfo) {
             itemIcon = createFolderIcon(viewgroup, (FolderInfo)iteminfo);
         }else {
             itemIcon = createShortcutIcon(viewgroup, (ShortcutInfo)iteminfo);
@@ -302,17 +321,22 @@ public class Launcher extends Activity implements OnClickListener,
         return itemIcon;
     }
     
+    /**
+     * 功能：  将各ITEM添加至相应的位置
+     * @param iteminfo
+     * @param flag
+     */
     public void addItem(ItemInfo iteminfo, boolean flag){
         if (iteminfo.container != LauncherSettings.Favorites.CONTAINER_HOTSEAT){
-            if (!(iteminfo instanceof ShortcutInfo))
-            {
-                if (iteminfo instanceof FolderInfo)
-                    mWorkspace.addInScreen(createItemIcon(mWorkspace.getCurrentCellLayout(), 
-                            iteminfo), iteminfo.screenId, iteminfo.cellX, iteminfo.cellY, 1, 1, false);
+            // 文件夹
+            if (iteminfo instanceof FolderInfo){
+                mWorkspace.addInScreen(createItemIcon(mWorkspace.getCurrentCellLayout(), 
+                        iteminfo), iteminfo.screenId, iteminfo.cellX, iteminfo.cellY, 1, 1, false);
             } else {
+                // 快捷方式
                 addShortcut((ShortcutInfo)iteminfo, flag);
             }
-        }else {
+        } else {
             // 添加HOTSEAT
             mHotSeats.pushItem(iteminfo);
         }
@@ -351,6 +375,11 @@ public class Launcher extends Activity implements OnClickListener,
         }
     }
     
+    public boolean isInEditing(){
+        boolean flag = false;
+        
+        return flag;
+    }
     @Override
     public void bindAppWidget(LauncherAppWidgetInfo launcherappwidgetinfo) {
         // TODO Auto-generated method stub
@@ -358,9 +387,9 @@ public class Launcher extends Activity implements OnClickListener,
     }
 
     @Override
-    public void bindAppsAdded(final ArrayList arraylist) {
+    public void bindAppsAdded(final ArrayList<ShortcutInfo> arraylist) {
         mWorkspace.post(new Runnable() {
-            final ArrayList apps = arraylist;
+            final ArrayList<ShortcutInfo> apps = arraylist;
             @Override
             public void run() {
                 Iterator<ShortcutInfo> iterator = apps.iterator();

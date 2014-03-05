@@ -74,13 +74,29 @@ public class AllAppsList {
             return;
         }
         
+        // 找到各项在数据表中的Index值
+        final int idIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites._ID);
+        final int intentIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.INTENT);
+        final int titleIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.TITLE);
+        final int iconTypeIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.ICON_TYPE);
+        final int iconIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.ICON);
+        final int iconPackageIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.ICON_PACKAGE);
+        final int iconResourceIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.ICON_RESOURCE);
+        final int containerIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.CONTAINER);
+        final int itemTypeIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.ITEM_TYPE);
+        final int appWidgetIdIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.APPWIDGET_ID);
+        final int screenIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.SCREEN);
+        final int cellXIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.CELLX);
+        final int cellYIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.CELLY);
+        final int spanXIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.SPANX);
+        final int spanYIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.SPANY);
+        
         try {
             if (cursor.moveToNext()){
                 ShortcutInfo shortcutinfo = ((LauncherApplication)context).getModel()
-                        .getShortcutInfo(intent, cursor, context, 
-                                LauncherModel.colToInt(ItemQuery.COL.ICONTYPE), LauncherModel.colToInt(ItemQuery.COL.ICONPACKAGE),
-                                LauncherModel.colToInt(ItemQuery.COL.ICONRESOURCE), LauncherModel.colToInt(ItemQuery.COL.ICON),
-                                LauncherModel.colToInt(ItemQuery.COL.TITLE));
+                        .getShortcutInfo(intent, cursor, context, iconTypeIndex, iconPackageIndex,
+                                iconResourceIndex, iconIndex,titleIndex);
+                
                 shortcutinfo.load(cursor);
                 shortcutinfo.intent = intent;
                 if (LOGD) {
@@ -143,6 +159,8 @@ public class AllAppsList {
                 //PositionQuery.COLUMNS, "intent=? AND iconPackage=?", sSelectionArgs, null);
         
         if (cursor == null) {
+            shortcutinfo.screenId = -1L;
+            Log.e(TAG, (new StringBuilder()).append("Can't load postion for app ").append(shortcutinfo.title).toString());
             return;
         }
         
@@ -170,7 +188,6 @@ public class AllAppsList {
             if (cursor != null) cursor.close();
         }
         cursor.close();
-        shortcutinfo.screenId = -1L;
     }
     
     public void add(ShortcutInfo shortcutinfo){

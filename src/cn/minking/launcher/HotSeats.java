@@ -86,9 +86,9 @@ public class HotSeats extends LinearLayout
             mCurrentSeats[i] = iteminfo;
             HotSeatButton hotseatbutton = (HotSeatButton)getChildAt(i);
             hotseatbutton.unbind(mDragController);
-            if (iteminfo == null)
-            {
-                android.widget.LinearLayout.LayoutParams layoutparams = (android.widget.LinearLayout.LayoutParams)hotseatbutton.getLayoutParams();
+            if (iteminfo == null) {
+                android.widget.LinearLayout.LayoutParams layoutparams 
+                    = (android.widget.LinearLayout.LayoutParams)hotseatbutton.getLayoutParams();
                 layoutparams.width = 0;
                 layoutparams.weight = 0F;
                 hotseatbutton.setLayoutParams(layoutparams);
@@ -100,7 +100,8 @@ public class HotSeats extends LinearLayout
                 }
                 hotseatbutton.setTag(iteminfo);
                 hotseatbutton.setOnLongClickListener(this);
-                android.widget.LinearLayout.LayoutParams layoutparams = (android.widget.LinearLayout.LayoutParams)hotseatbutton.getLayoutParams();
+                android.widget.LinearLayout.LayoutParams layoutparams 
+                    = (android.widget.LinearLayout.LayoutParams)hotseatbutton.getLayoutParams();
                 layoutparams.width = -1;
                 layoutparams.weight = 1F;
                 hotseatbutton.setLayoutParams(layoutparams);
@@ -144,7 +145,6 @@ public class HotSeats extends LinearLayout
         
         if (!isEmptySeat(iteminfo.cellX)) {
             if(-1 == findEmptySeat()) return bFlag;
-            
         }else {
             setSeat(iteminfo.cellX, iteminfo);
         }
@@ -161,7 +161,7 @@ public class HotSeats extends LinearLayout
         for (int i = 0; i < MAX_SEATS; i++) {
             
             // 调用removeAllViewsInLayout()，清空以前的数据
-            ((HotSeatButton)getChildAt(i)).removeAllViewsInLayout();
+//          ((HotSeatButton)getChildAt(i)).removeAllViewsInLayout();
             mSavedSeats[i] = null;
             mCurrentSeats[i] = null;
         }
