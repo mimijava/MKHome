@@ -12,10 +12,13 @@ package cn.minking.launcher;
 import java.lang.ref.WeakReference;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 
 import cn.minking.launcher.AllAppsList.RemoveInfo;
 import cn.minking.launcher.gadget.GadgetInfo;
@@ -56,6 +59,8 @@ public class LauncherModel extends BroadcastReceiver {
     static final String TAG = "MKHome.Model";
     static final boolean LOGD = true;
     
+    // batch size for the workspace icons
+    private static final int ITEMS_CHUNK = 6;
     private static HashSet<String> sDelayedUpdateBuffer = null;
     // launcher loader 的装载线程
     private static final HandlerThread sWorkerThread = new HandlerThread("launcher-loader");
@@ -100,6 +105,8 @@ public class LauncherModel extends BroadcastReceiver {
     //       shortcuts within folders).
     static final ArrayList<ItemInfo> sBgWorkspaceItems = new ArrayList<ItemInfo>();
 
+    static final ArrayList<Runnable> mDeferredBindRunnables = new ArrayList<Runnable>();
+    
     // sBgAppWidgets is all LauncherAppWidgetInfo created by LauncherModel. Passed to bindAppWidget()
     static final ArrayList<LauncherAppWidgetInfo> sBgAppWidgets = 
             new ArrayList<LauncherAppWidgetInfo>();
@@ -111,7 +118,7 @@ public class LauncherModel extends BroadcastReceiver {
     private final ArrayList<LauncherAppWidgetInfo> mAppWidgets = new ArrayList<LauncherAppWidgetInfo>();
     private final ArrayList<GadgetInfo> mGadgets = new ArrayList<GadgetInfo>();
     private final HashMap<Long, FolderInfo> mFolders = new HashMap<Long, FolderInfo>();
-    private final ArrayList<Object> mItems = new ArrayList<Object>();
+    private final ArrayList<ItemInfo> mItems = new ArrayList<ItemInfo>();
     private final HashMap<ComponentName, Long> mLoadedApps = new HashMap<ComponentName, Long>();
     private final HashSet<String> mLoadedPackages = new HashSet<String>();
     private final HashSet<String> mLoadedPresetPackages = new HashSet<String>();
@@ -301,7 +308,196 @@ public class LauncherModel extends BroadcastReceiver {
         
         private void waitForIdle() {
             synchronized (LoaderTask.this) {
+                long l = SystemClock.uptimeMillis();
+
+                // 桌面加载后执行
+                mHandler.postIdle(new Runnable() {
+                    @Override
+                    public void run() {
+                        mLoadAndBindStepFinished = true;
+                        Log.d(TAG, "done with previous binding step");
+                        notify();
+                    }
+                });
                 
+                if (!mStopped) {
+                    if (!mLoadAndBindStepFinished) {
+                        try{
+                            wait();
+                        } catch (InterruptedException _ex) {}
+                        if (LOGD) {
+                            Log.d(TAG, (new StringBuilder()).append("waited ").
+                                    append(SystemClock.uptimeMillis() - l).
+                                    append("ms for previous step to finish binding").toString());
+                        }
+                    }
+                }
+            }
+        }
+        
+        private void bindWorkspaceItems(final Callbacks oldCallbacks,
+                final ArrayList<ItemInfo> workspaceItems,
+                final ArrayList<LauncherAppWidgetInfo> appWidgets,
+                final HashMap<Long, FolderInfo> folders,
+                ArrayList<Runnable> deferredBindRunnables) {
+
+            final boolean postOnMainThread = (deferredBindRunnables != null);
+
+            // Bind the workspace items
+            int N = workspaceItems.size();
+            for (int i = 0; i < N; i += ITEMS_CHUNK) {
+                final int start = i;
+                final int chunkSize = (i+ITEMS_CHUNK <= N) ? ITEMS_CHUNK : (N-i);
+                final Runnable r = new Runnable() {
+                    @Override
+                    public void run() {
+                        Callbacks callbacks = tryGetCallbacks(oldCallbacks);
+                        if (callbacks != null) {
+                            callbacks.bindItems(workspaceItems, start, start+chunkSize);
+                        }
+                    }
+                };
+                if (postOnMainThread) {
+                    deferredBindRunnables.add(r);
+                } else {
+                    runOnMainThread(r, MAIN_THREAD_BINDING_RUNNABLE);
+                }
+            }
+
+            // Bind the folders
+            if (!folders.isEmpty()) {
+                final Runnable r = new Runnable() {
+                    public void run() {
+                        Callbacks callbacks = tryGetCallbacks(oldCallbacks);
+                        if (callbacks != null) {
+                            callbacks.bindFolders(folders);
+                        }
+                    }
+                };
+                if (postOnMainThread) {
+                    deferredBindRunnables.add(r);
+                } else {
+                    runOnMainThread(r, MAIN_THREAD_BINDING_RUNNABLE);
+                }
+            }
+
+            // Bind the widgets, one at a time
+            N = appWidgets.size();
+            for (int i = 0; i < N; i++) {
+                final LauncherAppWidgetInfo widget = appWidgets.get(i);
+                final Runnable r = new Runnable() {
+                    public void run() {
+                        Callbacks callbacks = tryGetCallbacks(oldCallbacks);
+                        if (callbacks != null) {
+                            callbacks.bindAppWidget(widget);
+                        }
+                    }
+                };
+                if (postOnMainThread) {
+                    deferredBindRunnables.add(r);
+                } else {
+                    runOnMainThread(r, MAIN_THREAD_BINDING_RUNNABLE);
+                }
+            }
+        }
+        
+        /** Filters the set of items who are directly or indirectly (via another container) on the
+         * specified screen. */
+        private void filterCurrentWorkspaceItems(int currentScreen,
+                ArrayList<ItemInfo> allWorkspaceItems,
+                ArrayList<ItemInfo> currentScreenItems,
+                ArrayList<ItemInfo> otherScreenItems) {
+            // Purge any null ItemInfos
+            Iterator<ItemInfo> iter = allWorkspaceItems.iterator();
+            while (iter.hasNext()) {
+                ItemInfo i = iter.next();
+                if (i == null) {
+                    iter.remove();
+                }
+            }
+
+            // If we aren't filtering on a screen, then the set of items to load is the full set of
+            // items given.
+            if (currentScreen < 0) {
+                currentScreenItems.addAll(allWorkspaceItems);
+            }
+
+            // Order the set of items by their containers first, this allows use to walk through the
+            // list sequentially, build up a list of containers that are in the specified screen,
+            // as well as all items in those containers.
+            Set<Long> itemsOnScreen = new HashSet<Long>();
+            Collections.sort(allWorkspaceItems, new Comparator<ItemInfo>() {
+                @Override
+                public int compare(ItemInfo lhs, ItemInfo rhs) {
+                    return (int) (lhs.container - rhs.container);
+                }
+            });
+            for (ItemInfo info : allWorkspaceItems) {
+                if (info.container == LauncherSettings.Favorites.CONTAINER_DESKTOP) {
+                    if (info.screenId == currentScreen) {
+                        currentScreenItems.add(info);
+                        itemsOnScreen.add(info.id);
+                    } else {
+                        otherScreenItems.add(info);
+                    }
+                } else if (info.container == LauncherSettings.Favorites.CONTAINER_HOTSEAT) {
+                    currentScreenItems.add(info);
+                    itemsOnScreen.add(info.id);
+                } else {
+                    if (itemsOnScreen.contains(info.container)) {
+                        currentScreenItems.add(info);
+                        itemsOnScreen.add(info.id);
+                    } else {
+                        otherScreenItems.add(info);
+                    }
+                }
+            }
+        }
+
+        /** Filters the set of widgets which are on the specified screen. */
+        private void filterCurrentAppWidgets(int currentScreen,
+                ArrayList<LauncherAppWidgetInfo> appWidgets,
+                ArrayList<LauncherAppWidgetInfo> currentScreenWidgets,
+                ArrayList<LauncherAppWidgetInfo> otherScreenWidgets) {
+            // If we aren't filtering on a screen, then the set of items to load is the full set of
+            // widgets given.
+            if (currentScreen < 0) {
+                currentScreenWidgets.addAll(appWidgets);
+            }
+
+            for (LauncherAppWidgetInfo widget : appWidgets) {
+                if (widget == null) continue;
+                if (widget.container == LauncherSettings.Favorites.CONTAINER_DESKTOP &&
+                        widget.screenId == currentScreen) {
+                    currentScreenWidgets.add(widget);
+                } else {
+                    otherScreenWidgets.add(widget);
+                }
+            }
+        }
+
+        /** Filters the set of folders which are on the specified screen. */
+        private void filterCurrentFolders(int currentScreen,
+                HashMap<Long, ItemInfo> itemsIdMap,
+                HashMap<Long, FolderInfo> folders,
+                HashMap<Long, FolderInfo> currentScreenFolders,
+                HashMap<Long, FolderInfo> otherScreenFolders) {
+            // If we aren't filtering on a screen, then the set of items to load is the full set of
+            // widgets given.
+            if (currentScreen < 0) {
+                currentScreenFolders.putAll(folders);
+            }
+
+            for (long id : folders.keySet()) {
+                ItemInfo info = itemsIdMap.get(id);
+                FolderInfo folder = folders.get(id);
+                if (info == null || folder == null) continue;
+                if (info.container == LauncherSettings.Favorites.CONTAINER_DESKTOP &&
+                        info.screenId == currentScreen) {
+                    currentScreenFolders.put(id, folder);
+                } else {
+                    otherScreenFolders.put(id, folder);
+                }
             }
         }
         
@@ -309,15 +505,52 @@ public class LauncherModel extends BroadcastReceiver {
          * 功能：  BIND WORKSPACE
          */
         private void bindWorkspace() {
-            final long t = LOGD ? SystemClock.uptimeMillis() : 0;
+            final long t = SystemClock.uptimeMillis();
             Runnable r;
-            
+
+            // Don't use these two variables in any of the callback runnables.
+            // Otherwise we hold a reference to them.
             final Callbacks oldCallbacks = mCallbacks.get();
             if (oldCallbacks == null) {
-                Log.w(TAG, "MK : LoadTask running with no launcher");
+                // This launcher has exited and nobody bothered to tell us.  Just bail.
+                Log.w(TAG, "LoaderTask running with no launcher");
                 return;
             }
-            
+
+            final int currentScreen = oldCallbacks.getCurrentWorkspaceScreen();
+
+            // Load all the items that are on the current page first (and in the process, unbind
+            // all the existing workspace items before we call startBinding() below.
+            unbindWorkspaceItemsOnMainThread();
+            ArrayList<ItemInfo> workspaceItems = new ArrayList<ItemInfo>();
+            ArrayList<LauncherAppWidgetInfo> appWidgets =
+                    new ArrayList<LauncherAppWidgetInfo>();
+            HashMap<Long, FolderInfo> folders = new HashMap<Long, FolderInfo>();
+            HashMap<Long, ItemInfo> itemsIdMap = new HashMap<Long, ItemInfo>();
+            synchronized (sBgLock) {
+                workspaceItems.addAll(sBgWorkspaceItems);
+                appWidgets.addAll(sBgAppWidgets);
+                folders.putAll(sBgFolders);
+                itemsIdMap.putAll(sBgItemsIdMap);
+            }
+
+            ArrayList<ItemInfo> currentWorkspaceItems = new ArrayList<ItemInfo>();
+            ArrayList<ItemInfo> otherWorkspaceItems = new ArrayList<ItemInfo>();
+            ArrayList<LauncherAppWidgetInfo> currentAppWidgets =
+                    new ArrayList<LauncherAppWidgetInfo>();
+            ArrayList<LauncherAppWidgetInfo> otherAppWidgets =
+                    new ArrayList<LauncherAppWidgetInfo>();
+            HashMap<Long, FolderInfo> currentFolders = new HashMap<Long, FolderInfo>();
+            HashMap<Long, FolderInfo> otherFolders = new HashMap<Long, FolderInfo>();
+
+            // Separate the items that are on the current screen, and all the other remaining items
+            filterCurrentWorkspaceItems(currentScreen, workspaceItems, currentWorkspaceItems,
+                    otherWorkspaceItems);
+            filterCurrentAppWidgets(currentScreen, appWidgets, currentAppWidgets,
+                    otherAppWidgets);
+            filterCurrentFolders(currentScreen, itemsIdMap, folders, currentFolders,
+                    otherFolders);
+
             // Tell the workspace that we're about to start binding items
             r = new Runnable() {
                 public void run() {
@@ -328,6 +561,16 @@ public class LauncherModel extends BroadcastReceiver {
                 }
             };
             runOnMainThread(r, MAIN_THREAD_BINDING_RUNNABLE);
+
+            // Load items on the current page
+            bindWorkspaceItems(oldCallbacks, currentWorkspaceItems, currentAppWidgets,
+                    currentFolders, null);
+            
+            // Load all the remaining pages (if we are loading synchronously, we want to defer this
+            // work until after the first render)
+            mDeferredBindRunnables.clear();
+            bindWorkspaceItems(oldCallbacks, otherWorkspaceItems, otherAppWidgets, otherFolders,
+                    mDeferredBindRunnables);
         }
         
         /**
@@ -364,7 +607,7 @@ public class LauncherModel extends BroadcastReceiver {
                 onlyBindAllApps();
             }
         }
-
+                
         /**
          * 功能： 加载 WORKSPACE
          */
@@ -375,8 +618,6 @@ public class LauncherModel extends BroadcastReceiver {
             final PackageManager manager = context.getPackageManager();
             final AppWidgetManager widgets = AppWidgetManager.getInstance(context);
             final boolean isSafeMode = manager.isSafeMode();
-            
-            mApp.getLauncherProvider().loadDefaultFavoritesIfNecessary(0);
             
             synchronized (sBgLock) {
                 // MKHOME 桌面项清零重置
@@ -407,12 +648,14 @@ public class LauncherModel extends BroadcastReceiver {
                         // 将得到的包和类名称存放到哈希表中存储
                         mInstalledComponents.add(new ComponentName(packageName, name));
                         appCounts++;
-                        if (LOGD) Log.d(TAG, "MK : pack: " + packageName + "name: " + name);
+                        // if (LOGD) Log.d(TAG, "MK : pack: " + packageName + "name: " + name);
                     }
                 }
                 
                 if (LOGD) Log.d(TAG, "MK : appCounts = " + appCounts);
                 
+                // 将已安装的APP的BUNDLE数据保存起来
+                // 如： {"com.android.contacts","com.android.mms", ...... }
                 if (!mInstalledComponents.isEmpty()) {
                     updateInstalledComponentsArg(mContext);
                 }
@@ -432,29 +675,35 @@ public class LauncherModel extends BroadcastReceiver {
                 Uri uri = LauncherSettings.Favorites.CONTENT_URI;
                 
                 // 1. 首先读取桌面容器中的ITEM
-                loadItems(contentResolver.query(joinUri, columns, "container=?", containerSelDestop, "screens.screenOrder ASC, cellY ASC, cellX ASC, itemType ASC"), idList, itemList);
+                loadItems(contentResolver.query(joinUri, columns, "container=?", containerSelDestop, 
+                        "screens.screenOrder ASC, cellY ASC, cellX ASC, itemType ASC"), idList, itemList);
                 
                 // 选择筛选项， 此两项详细请看URI的query方法
                 String containerSelHotseat[] = new String[]{String.valueOf(LauncherSettings.Favorites.CONTAINER_HOTSEAT)};
                 
                 // 2. 再读取HOTSEAT容器中的ITEM
-                loadItems(contentResolver.query(uri, columns, "container=?", containerSelHotseat, null), idList, itemList);
-                ContentProviderClient contentProviderClient = mContentResolver.acquireContentProviderClient(LauncherSettings.Favorites.CONTENT_URI);
+                loadItems(contentResolver.query(uri, columns, 
+                        "container=?", containerSelHotseat, null), idList, itemList);
+                
+                // Provider的代理
+                ContentProviderClient contentProviderClient = 
+                        mContentResolver.acquireContentProviderClient(LauncherSettings.Favorites.CONTENT_URI);
                 
                 Log.d(TAG, "MK : idList size " + idList.size() + " itemList size " + itemList.size());
-                if (!idList.isEmpty()) {
-                    for (Iterator<Long> iterator = idList.iterator(); iterator.hasNext();) {
-                        long id = (iterator.next()).longValue();
-                        Log.d(TAG, "MK : " + (new StringBuilder()).append("Removed id = ").append(id).toString());
-                        try {
-                            contentProviderClient.delete(LauncherSettings.Favorites.getContentUri(id), null, null);
-                        } catch (RemoteException _ex) {
-                            Log.w(TAG, "MK : " + (new StringBuilder()).append("Could not remove id = ").append(id).toString());
-                        } catch (SQLException _ex) {
-                            Log.w(TAG, "MK : " + (new StringBuilder()).append("Could not remove id(database readonly) = ").append(id).toString());
-                        }
-                    }
-                }
+//              if (!idList.isEmpty()) {
+//                  for (Iterator<Long> iterator = idList.iterator(); iterator.hasNext();) {
+//                      long id = (iterator.next()).longValue();
+//                      Log.d(TAG, "MK : " + (new StringBuilder()).append("Removed id = ").append(id).toString());
+//                      try {
+//                          int result = contentProviderClient.delete(LauncherSettings.Favorites.getContentUri(id), null, null);
+//                          Log.w(TAG, "MK : Remove id =" + id + " result = " + result);
+//                      } catch (RemoteException _ex) {
+//                          Log.w(TAG, "MK : " + (new StringBuilder()).append("Could not remove id = ").append(id).toString());
+//                      } catch (SQLException _ex) {
+//                          Log.w(TAG, "MK : " + (new StringBuilder()).append("Could not remove id(database readonly) = ").append(id).toString());
+//                      }
+//                  }
+//              }
                 
                 if (!itemList.isEmpty()) {
                     ContentValues contentValues = new ContentValues();
@@ -469,7 +718,8 @@ public class LauncherModel extends BroadcastReceiver {
                     stringBuilder.setCharAt(stringBuilder.length() - 1, ')');
                     
                     try {
-                        contentProviderClient.update(LauncherSettings.Favorites.CONTENT_URI, contentValues, stringBuilder.toString(), null);
+                        int result = contentProviderClient.update(LauncherSettings.Favorites.CONTENT_URI, contentValues, stringBuilder.toString(), null);
+                        Log.w(TAG, "MK : Update" + stringBuilder.toString() + " result = " + result);
                     } catch (RemoteException remoteException) {
                         remoteException.printStackTrace();
                     }
@@ -489,6 +739,14 @@ public class LauncherModel extends BroadcastReceiver {
                         contentValues.clear();
                     }
                 }
+                
+                mHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        Log.d(TAG, (new StringBuilder()).append("load workspace in ").
+                                append(SystemClock.uptimeMillis() - t).append("ms").toString());    
+                    }
+                });
             }
         }
         
@@ -649,7 +907,8 @@ public class LauncherModel extends BroadcastReceiver {
             
             while (!mStopped && cursor.moveToNext()) {
                 try {
-                    int itemType = cursor.getInt(itemTypeIndex);                    
+                    int itemType = cursor.getInt(itemTypeIndex);        
+                    String packagename = cursor.getString(1);
                     switch (itemType) {
                         case LauncherSettings.Favorites.ITEM_TYPE_APPLICATION:
                         case LauncherSettings.Favorites.ITEM_TYPE_SHORTCUT:
@@ -767,7 +1026,7 @@ public class LauncherModel extends BroadcastReceiver {
         public void stopLocked() {
             synchronized (LoaderTask.this) {
                 mStopped = true;
-                this.notify();
+                notify();
             }
         }
         
@@ -811,8 +1070,8 @@ public class LauncherModel extends BroadcastReceiver {
     }
     
     private abstract class DataCarriedRunnable implements Runnable {
-        protected Callbacks mData;
-        public DataCarriedRunnable(Callbacks obj){
+        protected Object mData;
+        public DataCarriedRunnable(Object obj){
             mData = obj;
         }
     }
@@ -825,11 +1084,11 @@ public class LauncherModel extends BroadcastReceiver {
 
         public abstract void bindAppsRemoved(ArrayList<RemoveInfo> arraylist);
 
-        public abstract void bindFolders(HashMap hashmap);
+        public abstract void bindFolders(HashMap<Long, FolderInfo> hashmap);
 
         public abstract void bindGadget(GadgetInfo gadgetinfo);
 
-        public abstract void bindItems(ArrayList arraylist, int i, int j);
+        public abstract void bindItems(ArrayList<ItemInfo> arraylist, int i, int j);
 
         public abstract void bindUpsideScene(SceneData scenedata);
 
@@ -968,6 +1227,45 @@ public class LauncherModel extends BroadcastReceiver {
         }
     }
     
+    /** Unbinds all the sBgWorkspaceItems and sBgAppWidgets on the main thread */
+    void unbindWorkspaceItemsOnMainThread() {
+        // Ensure that we don't use the same workspace items data structure on the main thread
+        // by making a copy of workspace items first.
+        final ArrayList<ItemInfo> tmpWorkspaceItems = new ArrayList<ItemInfo>();
+        final ArrayList<ItemInfo> tmpAppWidgets = new ArrayList<ItemInfo>();
+        synchronized (sBgLock) {
+            tmpWorkspaceItems.addAll(sBgWorkspaceItems);
+            tmpAppWidgets.addAll(sBgAppWidgets);
+        }
+        Runnable r = new Runnable() {
+                @Override
+                public void run() {
+                   for (ItemInfo item : tmpWorkspaceItems) {
+                       item.unbind();
+                   }
+                   for (ItemInfo item : tmpAppWidgets) {
+                       item.unbind();
+                   }
+                }
+            };
+        runOnMainThread(r);
+    }
+    
+    public void unbindItemInfosAndClearQueuedBindRunnables() {
+        if (sWorkerThread.getThreadId() == Process.myTid()) {
+            throw new RuntimeException("Expected unbindLauncherItemInfos() to be called from the " +
+                    "main thread");
+        }
+
+        // Clear any deferred bind runnables
+        mDeferredBindRunnables.clear();
+        // Remove any queued bind runnables
+        mHandler.cancelAllRunnablesOfType(MAIN_THREAD_BINDING_RUNNABLE);
+        // Unbind all the workspace items
+        unbindWorkspaceItemsOnMainThread();
+    }
+
+    
     public void initialize(Callbacks callbacks) {
         synchronized (mLock) {
             mCallbacks = new WeakReference<Callbacks>(callbacks);
@@ -976,6 +1274,10 @@ public class LauncherModel extends BroadcastReceiver {
     
     public void startLoader(Context context, boolean isLaunching) {
         synchronized (mLock) {
+            // Clear any deferred bind-runnables from the synchronized load process
+            // We must do this before any loading/binding is scheduled below.
+            mDeferredBindRunnables.clear();
+            
             // 如果线程没有任何作用则不进入调用节省时间及资源
             if (mCallbacks != null && mCallbacks.get() != null) {
                 // 如果已经有一个线程在运行则通知停止已经在运行的线程
@@ -1179,6 +1481,23 @@ public class LauncherModel extends BroadcastReceiver {
         }
         
         return shortcutInfo;
+    }
+    
+    public void stopLoader(){
+        synchronized (mLock) {
+            if (mLoaderTask != null){
+                mLoaderTask.stopLocked();
+            }
+        }
+    }
+    
+    public void stopLoaderAsync() {
+        runOnWorkerThread(new Runnable() {
+            @Override
+            public void run() {
+                stopLoader();
+            }
+        });
     }
     
     public void updateSavedIcon(Context context, ShortcutInfo shortcutinfo, Cursor cursor, int iconIndex){

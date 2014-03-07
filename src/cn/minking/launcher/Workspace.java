@@ -15,6 +15,10 @@ import android.content.Context;
 import android.content.res.Resources;
 import android.graphics.Canvas;
 import android.graphics.Rect;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.preference.PreferenceManager;
 import android.util.AttributeSet;
 import android.view.LayoutInflater;
@@ -22,7 +26,8 @@ import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.widget.FrameLayout;
 
-public class Workspace extends DragableScreenView {
+public class Workspace extends DragableScreenView 
+    implements SensorEventListener{
 
     private ContentResolver mResolver;
     private final WallpaperManager mWallpaperManager;
@@ -106,7 +111,30 @@ public class Workspace extends DragableScreenView {
         // TODO Auto-generated method stub
         super.onPinchIn(detector);
     }
+    
+    @Override
+    public void onAccuracyChanged(Sensor sensor, int accuracy) {
+        // TODO Auto-generated method stub
+        
+    }
 
+    @Override
+    public void onSensorChanged(SensorEvent event) {
+        // TODO Auto-generated method stub
+        
+    }
+
+    private void unRegistAccelerometer() {
+        SensorManager sensormanager = (SensorManager)getContext().getSystemService("sensor");
+        if (sensormanager != null){
+            sensormanager.unregisterListener(this);
+        }
+    }
+
+    public void onDestory() {
+        unRegistAccelerometer();
+    }
+    
     @Override
     protected boolean onRequestFocusInDescendants(int direction,
             Rect previouslyFocusedRect) {

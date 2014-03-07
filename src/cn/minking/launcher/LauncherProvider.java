@@ -22,6 +22,7 @@ import org.xmlpull.v1.XmlPullParserException;
 import org.xmlpull.v1.XmlPullParserFactory;
 
 import cn.minking.launcher.LauncherSettings.Favorites;
+import cn.minking.launcher.ScreenUtils.ScreenInfo;
 import android.app.SearchManager;
 import android.appwidget.AppWidgetHost;
 import android.appwidget.AppWidgetManager;
@@ -83,7 +84,7 @@ public class LauncherProvider extends ContentProvider {
     
     /// M: 保存场景数据
     private static DatabaseHelper sOpenHelper;
-    private ArrayList<CellScreen> mScreens;
+    private ArrayList<ScreenInfo> mScreens;
     
     
     /*
@@ -117,29 +118,27 @@ public class LauncherProvider extends ContentProvider {
         }
         
         SqlArguments(Uri uri, String selection, String selectionArgs[]){
-            // 如果SQL语句的条件为1，解析出table
             if (uri.getPathSegments().size() == 1){
+                // 如果SQL语句的条件为1，解析出table
                 table = selectTable((String)uri.getPathSegments().get(0));
                 where = selection;
                 args = selectionArgs;
                 id = -1L;
-            } else {
+            } else if (uri.getPathSegments().size() == 2) {
                 // 如果SQL语句的条件多于2个，解析出table及 where
-                if (uri.getPathSegments().size() == 2) {
-                    if (TextUtils.isEmpty(selection)) {
-                        table = selectTable(uri.getPathSegments().get(0));
-                        id = ContentUris.parseId(uri);
-                        if (!LauncherProvider.TABLE_FAVORITES.equals(table))
-                            where = (new StringBuilder()).append("screens._id=").append(id).toString();
-                        else
-                            where = (new StringBuilder()).append("favorites._id=").append(id).toString();
-                        args = null;
-                    }else {
-                        throw new UnsupportedOperationException((new StringBuilder()).append("WHERE clause not supported: ").append(uri).toString());
-                    }
+                if (TextUtils.isEmpty(selection)) {
+                    table = selectTable(uri.getPathSegments().get(0));
+                    id = ContentUris.parseId(uri);
+                    if (!LauncherProvider.TABLE_FAVORITES.equals(table))
+                        where = (new StringBuilder()).append("screens._id=").append(id).toString();
+                    else
+                        where = (new StringBuilder()).append("favorites._id=").append(id).toString();
+                    args = null;
                 }else {
-                    throw new IllegalArgumentException((new StringBuilder()).append("Invalid URI: ").append(uri).toString());
+                    throw new UnsupportedOperationException((new StringBuilder()).append("WHERE clause not supported: ").append(uri).toString());
                 }
+            } else {
+                throw new IllegalArgumentException((new StringBuilder()).append("Invalid URI: ").append(uri).toString());
             }
         }
     }
@@ -173,9 +172,14 @@ public class LauncherProvider extends ContentProvider {
      * 功能： 数据库删除
      */
     @Override
-    public int delete(Uri uri, String arg1, String[] arg2) {
-        // TODO Auto-generated method stub
-        return 0;
+    public int delete(Uri uri, String selection, String[] selectionArgs) {
+        synchronized (mLock) {
+            SqlArguments sqlarguments = new SqlArguments(uri, selection, selectionArgs);
+            SQLiteDatabase db = sOpenHelper.getWritableDatabase();
+            int i = db.delete(sqlarguments.table, sqlarguments.where, sqlarguments.args);
+            sOpenHelper.updateMaxId(db);
+            return i;
+        }
     }
     
     /**
@@ -191,7 +195,7 @@ public class LauncherProvider extends ContentProvider {
             SQLiteQueryBuilder qb = new SQLiteQueryBuilder();
             SQLiteDatabase db = sOpenHelper.getReadableDatabase();
             
-            // 设置需要查询的标
+            // 设置需要查询的表
             qb.setTables(sqlArguments.table);
             cursor = qb.query(db, projection, sqlArguments.where, sqlArguments.args, null, null, sortOrder);
             cursor.setNotificationUri(getContext().getContentResolver(), uri);
@@ -206,8 +210,65 @@ public class LauncherProvider extends ContentProvider {
     @Override
     public int update(Uri uri, ContentValues values, String selection,
             String[] selectionArgs) {
-        // TODO Auto-generated method stub
-        return 0;
+        synchronized (mLock) {
+            SqlArguments sqlArguments = new SqlArguments(uri, selection, selectionArgs);
+            SQLiteDatabase db = sOpenHelper.getWritableDatabase();
+            int i = 0;
+            
+            if ("packages".equals(sqlArguments.table)) {
+                String name = (String)values.get("name");
+                if (Boolean.TRUE.equals(values.getAsBoolean("delete"))) {
+                    ScreenUtils.removePackage(getContext(), db, name);
+                } else {
+                    ScreenUtils.updateHomeScreen(getContext(), db, 
+                            loadScreens(db), name, values.getAsBoolean("keepItem").booleanValue());
+                }
+                sOpenHelper.updateMaxId(db);
+                i = 0;
+            } else if ("screens".equals(sqlArguments.table)) {
+                String colum[] = new String[]{"screenOrder"};
+                Cursor cursor = db.query("screens", colum, null, null, null, null, null);
+                ArrayList<String> orderList = new ArrayList<String>();
+                if (cursor == null) {
+                    return 0;
+                }
+                while (cursor.moveToNext()) {
+                    orderList.add(String.valueOf(cursor.getInt(0)));
+                }
+                cursor.close();
+                
+                // 采用事务的方式进行数据库操作
+                db.beginTransaction();
+                int j = 0;
+                try {
+                    while (j < orderList.size()){
+                        ContentValues valuesT = new ContentValues();
+                        valuesT.put("screenOrder", Integer.valueOf(i));
+                        String table = sqlArguments.table;
+                        String as[] = new String[]{orderList.get(j)};
+                        
+                        i += db.update(table, valuesT, "_id=?", as);
+                        j++;
+                    }
+                    db.setTransactionSuccessful();
+                    db.endTransaction();
+                    mScreens = null;
+                } catch (Exception e) {
+                    db.endTransaction();
+                }
+                
+            } else if ("favorites".equals(sqlArguments.table) 
+                    && selection == null && values != null){
+                Long container = values.getAsLong("container");
+                Long screen = values.getAsLong("screen");
+                if ((container != null && -100L == container.longValue())
+                        && (screen != null && -1L == screen.longValue()))
+                    ScreenUtils.fillEmptyCell(getContext(), db, loadScreens(db), values);
+            }
+            i = db.update(sqlArguments.table, values, sqlArguments.where, sqlArguments.args);
+            return i;
+        }
+        
     }
     
     private void sendNotify(Uri uri) {
@@ -215,6 +276,13 @@ public class LauncherProvider extends ContentProvider {
         if (notify == null || "true".equals(notify)) {
             getContext().getContentResolver().notifyChange(uri, null);
         }
+    }
+    
+    private ArrayList<ScreenInfo> loadScreens(SQLiteDatabase db){
+        if (mScreens == null){
+            mScreens = ScreenUtils.loadScreens(db);
+        }
+        return mScreens;
     }
     
     /**
@@ -227,29 +295,6 @@ public class LauncherProvider extends ContentProvider {
         }
     }
     
-    synchronized public void loadDefaultFavoritesIfNecessary(int origWorkspaceResId){
-        String spKey = LauncherApplication.getSharedPreferencesKey();
-        SharedPreferences sp = getContext().getSharedPreferences(spKey, Context.MODE_PRIVATE);
-        
-        if (sp.getBoolean(DB_CREATED_BUT_DEFAULT_WORKSPACE_NOT_LOADED, false)) {
-            int workspaceResId = origWorkspaceResId;
-            
-            // 如果没有给定ID则使用默认的
-            if (workspaceResId == 0) {
-                workspaceResId = sp.getInt(DEFAULT_WORKSPACE_RESOURCE_ID, R.xml.default_workspace);
-            }
-            
-            // Populate favorites table with initial favorites
-            SharedPreferences.Editor editor = sp.edit();
-            editor.remove(DB_CREATED_BUT_DEFAULT_WORKSPACE_NOT_LOADED);
-            if (origWorkspaceResId != 0) {
-                editor.putInt(DEFAULT_WORKSPACE_RESOURCE_ID, origWorkspaceResId);
-            }
-            sOpenHelper.loadFavorites(sOpenHelper.getWritableDatabase(), workspaceResId);
-            sOpenHelper.updateSceneField(sOpenHelper.getWritableDatabase(), getContext().getString(R.string.scene_name_default));
-            
-        }
-    }
     /**
      * 功能： Provider的代理Client的call函数， LauncherModel中使用
      */
@@ -454,6 +499,9 @@ public class LauncherProvider extends ContentProvider {
             resolver.notifyChange(CONTENT_APPWIDGET_RESET_URI, null);
         }
         
+        /**
+         * 功能： 添加APP到数据库中
+         */
         private boolean addAppShortcut(SQLiteDatabase db, 
                 ContentValues values, 
                 FakedTypedArray array, 
@@ -462,6 +510,7 @@ public class LauncherProvider extends ContentProvider {
             String className;
             ActivityInfo activityinfo;
             
+            // 得到包名及入口类名
             if (array != null) {
                 packageName = array.getString(R.styleable.Favorite_packageName);
                 className = array.getString(R.styleable.Favorite_className);
@@ -488,6 +537,8 @@ public class LauncherProvider extends ContentProvider {
                 values.put(Favorites.ITEM_TYPE, Favorites.ITEM_TYPE_APPLICATION);
                 values.put(Favorites.SPANX, 1);
                 values.put(Favorites.SPANY, 1);
+                
+                // 插入数据库favorites表中，aa如果不为0表示插入成功
                 long aa = db.insert(TABLE_FAVORITES, null, values);
                 if (aa != 0) {
                     Log.w(TAG, "MK : Insert: " + aa);
@@ -692,6 +743,7 @@ public class LauncherProvider extends ContentProvider {
                         contentValues.put(LauncherSettings.Favorites.CELLX, fakedTypedArray.getString(R.styleable.Favorite_x));
                         contentValues.put(LauncherSettings.Favorites.CELLY, fakedTypedArray.getString(R.styleable.Favorite_y));
                     }
+                    
                     contentValues.put(LauncherSettings.Favorites.CONTAINER, containerString);
                     
                     if ("default".equals(name)) {
@@ -699,6 +751,8 @@ public class LauncherProvider extends ContentProvider {
                         editor.putLong("pref_default_screen", contentValues.getAsLong("screen").longValue());
                         editor.commit();
                     }
+                    
+                    // 不同类别使用不同的处理函数方法
                     if (TAG_FAVORITE.equals(name)) {
                         added = addAppShortcut(db, contentValues, fakedTypedArray, packageManager, intent);
                     } else if (TAG_SEARCH.equals(name)) {
@@ -821,36 +875,39 @@ public class LauncherProvider extends ContentProvider {
             return k;
         }
         
+        /**
+         * 功能： 创建screen表， screenOrder来排列屏幕的位置 
+         * @param db
+         */
         private void createScreensTable(SQLiteDatabase db){
-            Cursor cursor;
-            
             // 创建 screens 数据库表
             db.execSQL("DROP TABLE IF EXISTS screens");
             db.execSQL("CREATE TABLE screens("
                     + "_id INTEGER PRIMARY KEY,"
                     + "title TEXT,"
                     + "screenOrder INTEGER NOT NULL DEFAULT -1);");
-            String columns[] = new String[]{"MAX(screen)"};
             
-            cursor = db.query("favorites", columns, null, null, null, null, null);
+            // 查询favorites表中最大screen值
+            String columns[] = new String[]{"MAX(screen)"};
+            Cursor cursor = db.query("favorites", columns, null, null, null, null, null);
+            
             if (cursor == null) {
                 return;
             }
             
             try {
                 ContentValues contentValues;
-                int j;
-                long al[];
                 if (cursor.moveToNext()) {
-                    j = cursor.getInt(0) + 1;
+                    int j = cursor.getInt(0) + 1;
+                    long al[] = new long[j];
                     
-                    al = new long[j];
                     contentValues = new ContentValues();
                     for (int i = 0; i < j; i++) {
                         contentValues.clear();
                         contentValues.put("screenOrder", Integer.valueOf(i));
                         al[i] = db.insert("screens", null, contentValues);
                     }
+                    /*   ***** 无效 ***
                     j--;
                     if (j >= 0) {
                         contentValues.clear();
@@ -858,12 +915,12 @@ public class LauncherProvider extends ContentProvider {
                         String selString[] = new String[]{String.valueOf(j)};
                         
                         db.update("favorites", contentValues, "screen=?", selString);   
-                    }
+                    }*/
                 }   
+                cursor.close();
             } catch (Exception e) {
                 cursor.close();
             }
-            cursor.close();
         }
 
         @Override
@@ -924,22 +981,8 @@ public class LauncherProvider extends ContentProvider {
                 throw new RuntimeException("Error: could not query max id");
         }
 
-        public int loadFavorites(SQLiteDatabase db, int workspaceResourceId) {
-            int i = 0;
-            return i;
-        }
-        
-        public void updateSceneField(SQLiteDatabase db, String sceneName) {
-            db.beginTransaction();
-            try {
-                db.execSQL("UPDATE favorites " + "SET scene = '" + sceneName
-                        + "' WHERE scene IS NULL;");
-                db.setTransactionSuccessful();
-            } catch (SQLException e) {
-                // TODO: handle exception
-            } finally{
-                db.endTransaction();
-            }
+        public void updateMaxId(SQLiteDatabase db){
+            mMaxId = initializeMaxId(db);
         }
         
         public long generateNewId(){

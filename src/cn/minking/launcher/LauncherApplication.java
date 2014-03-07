@@ -1,5 +1,14 @@
 package cn.minking.launcher;
-
+/**
+ * 作者：      minking
+ * 文件名称:    LauncherApplication.java
+ * 创建时间：    2013-XX-XX
+ * 描述：  
+ * 更新内容
+ * ====================================================================================
+ * 
+ * ====================================================================================
+ */
 import java.lang.ref.WeakReference;
 
 import android.app.Application;
@@ -7,10 +16,11 @@ import android.content.*;
 
 public class LauncherApplication extends Application {
     private static float sScreenDensity = 0.0F;
+    
+    /// M: 处理图标显示的缓冲
     private IconCache mIconCache = null;
     private boolean mJustRestoreFinished = false;
     private Launcher mLauncher = null;
-    private static final String sSharedPreferencesKey = "com.android.launcher2.prefs";
     WeakReference<LauncherProvider> mLauncherProvider = null;
     private LauncherModel mModel = null;
     
@@ -29,10 +39,6 @@ public class LauncherApplication extends Application {
         return (LauncherProvider)mLauncherProvider.get();
     }
 
-    public static String getSharedPreferencesKey() {
-        return sSharedPreferencesKey;
-    }
-    
     @Override
     public void onTerminate() {
         super.onTerminate();

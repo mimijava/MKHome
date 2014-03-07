@@ -19,4 +19,5 @@
    	<string name="scene_name_work" translatable="false">work</string>
    	<string name="preferences_title">Launcher Settings</string>
    	<string name="editing_tips">Add or Edit widget</string>
+   	<string name="default_folder_title_tools">Tools</string>
 </resources>
