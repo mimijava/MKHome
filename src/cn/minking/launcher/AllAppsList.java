@@ -56,89 +56,33 @@ public class AllAppsList {
         removed = new ArrayList<RemoveInfo>();
     }
     
-    public void clear() {
-        added.clear();
-        removed.clear();
-    }
-    
     private void loadShortcuts(Context context, Intent intent, String packageName){
-        Cursor cursor;
-        ContentResolver contentResolver = context.getContentResolver();
         Uri uri = LauncherSettings.Favorites.CONTENT_URI;
-        String columns[] = ItemQuery.COLUMNS;
-        String selectargs[] = new String[]{intent.toUri(0).toString(), packageName};
+        String as[] = ItemQuery.COLUMNS;
+        String as1[] = new String[]{intent.toUri(0).toString(), packageName};
+        ContentResolver contentResolver = context.getContentResolver();
+        Cursor cursor = contentResolver.query(uri, as, "intent=? AND iconPackage=? AND itemType=1", as1, null);;
         
-        cursor = contentResolver.query(uri, columns, null, null, null);
+        if (cursor == null) return;
         
-        if (cursor == null) {
-            return;
-        }
-        
-        // 找到各项在数据表中的Index值
-        final int idIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites._ID);
-        final int intentIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.INTENT);
         final int titleIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.TITLE);
         final int iconTypeIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.ICON_TYPE);
         final int iconIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.ICON);
         final int iconPackageIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.ICON_PACKAGE);
         final int iconResourceIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.ICON_RESOURCE);
-        final int containerIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.CONTAINER);
-        final int itemTypeIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.ITEM_TYPE);
-        final int appWidgetIdIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.APPWIDGET_ID);
-        final int screenIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.SCREEN);
-        final int cellXIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.CELLX);
-        final int cellYIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.CELLY);
-        final int spanXIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.SPANX);
-        final int spanYIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.SPANY);
         
         try {
-            if (cursor.moveToNext()){
-                ShortcutInfo shortcutinfo = ((LauncherApplication)context).getModel()
-                        .getShortcutInfo(intent, cursor, context, iconTypeIndex, iconPackageIndex,
-                                iconResourceIndex, iconIndex,titleIndex);
-                
+            if (cursor.moveToNext()) {
+                ShortcutInfo shortcutinfo = ((LauncherApplication)context).getModel().
+                        getShortcutInfo(intent, cursor, context, 
+                                iconTypeIndex, iconPackageIndex, iconResourceIndex, iconIndex, titleIndex);
                 shortcutinfo.load(cursor);
                 shortcutinfo.intent = intent;
-                if (LOGD) {
-                    Object aobj[] = new Object[columns.length];
-                    
-                    aobj[0] = Integer.valueOf(cursor.getInt(LauncherModel.colToInt(ItemQuery.COL.ID)));
-                    aobj[1] = String.valueOf(cursor.getString(LauncherModel.colToInt(ItemQuery.COL.TITLE)));
-                    //aobj[2] = String.valueOf(cursor.getString(LauncherModel.colToInt(ItemQuery.COL.INTENT)));
-                    aobj[3] = Integer.valueOf(cursor.getInt(LauncherModel.colToInt(ItemQuery.COL.CONTAINER)));
-                    aobj[4] = Long.valueOf(cursor.getLong(LauncherModel.colToInt(ItemQuery.COL.SCREEN)));
-                    aobj[5] = Integer.valueOf(cursor.getInt(LauncherModel.colToInt(ItemQuery.COL.CELLX)));
-                    aobj[6] = Integer.valueOf(cursor.getInt(LauncherModel.colToInt(ItemQuery.COL.CELLY)));
-                    aobj[7] = Integer.valueOf(cursor.getInt(LauncherModel.colToInt(ItemQuery.COL.SPANX)));
-                    aobj[8] = Integer.valueOf(cursor.getInt(LauncherModel.colToInt(ItemQuery.COL.SPANY)));
-                    aobj[9] = Integer.valueOf(cursor.getInt(LauncherModel.colToInt(ItemQuery.COL.ITEMTYPE)));
-                    aobj[10] = Integer.valueOf(cursor.getInt(LauncherModel.colToInt(ItemQuery.COL.APPWIDGETID)));
-                    aobj[11] = Integer.valueOf(cursor.getInt(LauncherModel.colToInt(ItemQuery.COL.ISSHORTCUT)));
-                    aobj[12] = Integer.valueOf(cursor.getInt(LauncherModel.colToInt(ItemQuery.COL.ICONTYPE)));
-                    aobj[13] = String.valueOf(cursor.getString(LauncherModel.colToInt(ItemQuery.COL.ICONPACKAGE)));
-                    aobj[14] = String.valueOf(cursor.getString(LauncherModel.colToInt(ItemQuery.COL.ICONRESOURCE)));
-                    aobj[15] = Long.valueOf(cursor.getLong(LauncherModel.colToInt(ItemQuery.COL.SCREEN)));
-                    aobj[16] = String.valueOf(cursor.getString(LauncherModel.colToInt(ItemQuery.COL.URI)));
-                    aobj[17] = Integer.valueOf(cursor.getInt(LauncherModel.colToInt(ItemQuery.COL.DISPLAYMODE)));
-                    aobj[18] = Integer.valueOf(cursor.getInt(LauncherModel.colToInt(ItemQuery.COL.LAUNCHERCOUNT)));
-                    aobj[19] = Integer.valueOf(cursor.getInt(LauncherModel.colToInt(ItemQuery.COL.SORTMODE)));
-                    aobj[20] = Integer.valueOf(cursor.getInt(LauncherModel.colToInt(ItemQuery.COL.ITEMFLAGS)));
-                    
-                    Log.w(TAG, String.format("loadShortcuts("
-                            + "\n ID:%d, TITLE:%s, "
-                            + "\n Intent: %s, con: %d, scr: %d, cx: %d, cy:%d, "
-                            + "sx: %d, sy: %d, it: %d, ai: %d,"
-                            + "\n  ic: %d, it: %d, Ip: %s, is: %s, %d,"
-                            + "\n uri: %s, %d, %d, %d, %d) ", aobj));
-                }
                 add(shortcutinfo);
             }
-            if (cursor != null){
-                cursor.close();
-            }   
+            cursor.close();
         } catch (Exception e) {
-            Log.e(TAG, "Can't load postion for app " + packageName);
-            if (cursor != null) cursor.close();
+            cursor.close();
         }
     }
     
@@ -155,8 +99,7 @@ public class AllAppsList {
         sSelectionArgs[1] = packageName;
         
         Cursor cursor = contentResolver.query(LauncherSettings.Favorites.CONTENT_URI,
-                PositionQuery.COLUMNS, null, null, null);
-                //PositionQuery.COLUMNS, "intent=? AND iconPackage=?", sSelectionArgs, null);
+                PositionQuery.COLUMNS, "intent=? AND iconPackage=?", sSelectionArgs, null);
         
         if (cursor == null) {
             shortcutinfo.screenId = -1L;
@@ -204,6 +147,19 @@ public class AllAppsList {
             addApp(context, iterator.next());
         }
         
+    }
+    
+    public void clear() {
+        added.clear();
+        removed.clear();
+    }
+    
+    public void removePackage(String packageName) {
+        removePackage(packageName, false);
+    }
+
+    public void removePackage(String packageName, boolean flag) {
+        removed.add(new RemoveInfo(packageName, flag));
     }
     
     public void updatePackage(Context context, String packageName){

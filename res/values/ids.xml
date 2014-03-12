@@ -21,4 +21,9 @@
 	<item type="id" name="background"></item>
 	<item type="id" name="delete_btn"></item>
 	<item type="id" name="new_btn"></item>
+	<item type="id" name="celllayout_thumbnail_for_workspace_preview" />
+    <item type="id" name="celllayout_thumbnail_for_workspace_editing_preview" />
+    <item type="id" name="celllayout_thumbnail_for_workspace_preview_dirty" />
+    <item type="id" name="celllayout_thumbnail_for_workspace_editing_preview_dirty" />
+    <item type="id" name="workspace_preview"></item>
 </resources>

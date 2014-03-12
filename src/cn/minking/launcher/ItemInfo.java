@@ -127,7 +127,7 @@ public class ItemInfo implements Cloneable {
         }
         
         if (!cursor.isNull(LauncherModel.colToInt(ItemQuery.COL.CELLY))){
-            cellY = cursor.getInt(LauncherModel.colToInt(ItemQuery.COL.CELLX));
+            cellY = cursor.getInt(LauncherModel.colToInt(ItemQuery.COL.CELLY));
         }
         
         spanX = cursor.getInt(LauncherModel.colToInt(ItemQuery.COL.SPANX));

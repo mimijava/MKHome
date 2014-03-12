@@ -590,41 +590,59 @@ public class ScreenUtils {
             }
             
             if (container == LauncherSettings.Favorites.CONTAINER_DESKTOP) {
-                int count;
-                String sqlString = (new StringBuilder()).append("SELECT _id FROM favorites WHERE container=-100 AND screen=").
-                        append(screen).append(" AND (").append("cellX").append("-").
-                        append(cellX + spanX).append(")*(").append("cellX").append("+").
-                        append("spanX").append("-").append(cellX).append(")< 0 AND (").
-                        append("cellY").append("-").append(cellY + spanY).append(")*(").
-                        append("cellY").append("+").append("spanY").append("-").
-                        append(cellY).append(")< 0 AND ").append("_id").append("!=").
-                        append(id).toString();
-                if (sInstalledComponentsArg != null){
-                    sqlString = (new StringBuilder()).append(sqlString).append(" AND ((itemType<=1 AND iconPackage IN ").
-                            append(sInstalledComponentsArg).append(") OR ").append("itemType").
-                            append(">").append(1).append(")").toString();
-                }
-                Cursor c2 = db.rawQuery(sqlString, null);
-                if (c2 != null) {
-                    count = c2.getCount();
-                    if (count <= 0) {
-                        Cursor c3 = db.rawQuery((new StringBuilder()).append("SELECT _id FROM screens WHERE _id=").
-                                append(screen).append(";").toString(), null);
-                        if (c3 == null) return false;
-                        if (c3.getCount() == 0){
-                            deleteFavorite(db, id);
-                            flag = false;
-                            c3.close();
-                        }
-                    } else {
-                        deleteFavorite(db, id);
-                    }
-                    c2.close(); 
-                } else {
-                    return false;
-                }
                 if (screen == -1 || cellX == -1 || cellY == -1) {
                     flag = false;
+                } else {
+                    int count;
+                    String sqlString = (new StringBuilder()).append("SELECT _id FROM favorites WHERE container=-100 AND screen=").
+                            append(screen).append(" AND (").append("cellX").append("-").
+                            append(cellX + spanX).append(")*(").append("cellX").append("+").
+                            append("spanX").append("-").append(cellX).append(")< 0 AND (").
+                            append("cellY").append("-").append(cellY + spanY).append(")*(").
+                            append("cellY").append("+").append("spanY").append("-").
+                            append(cellY).append(")< 0 AND ").append("_id").append("!=").
+                            append(id).toString();
+                    if (sInstalledComponentsArg != null){
+                        sqlString = (new StringBuilder()).append(sqlString).append(" AND ((itemType<=1 AND iconPackage IN ").
+                                append(sInstalledComponentsArg).append(") OR ").append("itemType").
+                                append(">").append(1).append(")").toString();
+                    }
+                    Cursor c2 = db.rawQuery(sqlString, null);
+                    if (c2 != null) {
+                        count = c2.getCount();
+                        if (count <= 0) {
+                            Cursor c3 = db.rawQuery((new StringBuilder()).append("SELECT _id FROM screens WHERE _id=").
+                                    append(screen).append(";").toString(), null);
+                            if (c3 != null) {
+                                if (c3.getCount() <= 0){
+                                    deleteFavorite(db, id);
+                                    flag = false;
+                                } else {
+                                    flag = true;
+                                }
+                                c3.close();
+                            }
+                            
+                            if (flag) {
+                                String occupid[] = OccupidQuery.COLUMNS;
+                                String selOcc[] = new String[]{String.valueOf(id)};
+                                
+                                Cursor c4 = db.query("favorites", occupid, "_id=?", selOcc, null, null, null);
+                                if (c4 != null) {
+                                    if (cursor.getCount() == 1) {
+                                        flag = true;
+                                    } else {
+                                        flag = false;
+                                    }
+                                    c4.close();
+                                }
+                            }
+                        } else {
+                            deleteFavorite(db, id);
+                            flag = false;
+                        }
+                        c2.close(); 
+                    }
                 }
             }
         }

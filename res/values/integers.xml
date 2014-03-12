@@ -13,4 +13,5 @@
     <integer name="config_dropAnimMaxDuration">500</integer>
     <integer name="config_folderAnimDuration">120</integer>
     <integer name="config_dropAnimMaxDist">800</integer>
+    <integer name="config_animDuration">50</integer>
 </resources>

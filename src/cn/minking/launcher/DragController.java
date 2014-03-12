@@ -12,14 +12,25 @@ package cn.minking.launcher;
 import java.util.ArrayList;
 
 import android.content.Context;
+import android.graphics.Rect;
 import android.graphics.RectF;
 
 public class DragController {
+    static interface TouchTranslator {
+        public abstract void translatePosition(Rect rect);
+        public abstract void translateTouch(float af[]);
+    }
     
+    static interface DragListener {
+        public abstract void onDragEnd();
+        public abstract void onDragStart(DragSource dragsource, ItemInfo iteminfo, int i);
+    }
+
+
     /// M: 存储拖动目标
     private ArrayList<DropTarget> mDropTargets;
     private RectF mDeleteRegion;
-    
+    private TouchTranslator mTouchTranslater;
     
     public DragController(Context context){
         mDropTargets = new ArrayList<DropTarget>();
@@ -42,5 +53,9 @@ public class DragController {
      */
     public void removeDropTarget(DropTarget droptarget){
         mDropTargets.remove(droptarget);
+    }
+    
+    public void setTouchTranslator(TouchTranslator touchtranslator) {
+        mTouchTranslater = touchtranslator;
     }
 }

@@ -23,6 +23,18 @@ import android.widget.FrameLayout;
 import android.view.*;
 
 public class DragLayer extends FrameLayout {
+    public static class LayoutParams extends android.widget.FrameLayout.LayoutParams {
+
+        public boolean customPosition;
+        public int x;
+        public int y;
+
+        public LayoutParams(int i, int j) {
+            super(i, j);
+            customPosition = false;
+        }
+    }
+    
     private static final String TAG = "MKHome.DragLayer";
     
     // DragLayer应用与Launcher及使用的CONTROLLER

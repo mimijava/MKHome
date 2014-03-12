@@ -112,13 +112,13 @@ public class ShortcutInfo extends ItemInfo {
     @Override
     public void onAddToDatabase(ContentValues contentvalues) {
         super.onAddToDatabase(contentvalues);
-        String packageName;
+        String titleString;
         if (title == null) {
-            packageName = null;
+            titleString = null;
         }else {
-            packageName = title.toString();
+            titleString = title.toString();
         }
-        contentvalues.put("title", packageName);
+        contentvalues.put("title", titleString);
         
         String intentString;
         if (intent == null) {
@@ -129,7 +129,7 @@ public class ShortcutInfo extends ItemInfo {
         contentvalues.put("intent", intentString);
         contentvalues.put("iconType", Integer.valueOf(mIconType));
         if (mIconType == LauncherSettings.Favorites.ICON_TYPE_RESOURCE) {
-            if (onExternalStorage && !usingFallbackIcon) {
+            if (!usingFallbackIcon) {
                 writeBitmap(contentvalues, mIcon);
             }
             if (iconResource != null) {

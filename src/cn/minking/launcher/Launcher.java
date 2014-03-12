@@ -17,13 +17,19 @@ import java.util.Iterator;
 
 import cn.minking.launcher.gadget.GadgetInfo;
 import cn.minking.launcher.upsidescene.SceneData;
+import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.WallpaperManager;
+import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.ContentResolver;
+import android.content.Context;
 import android.content.Intent;
+import android.database.ContentObserver;
 import android.graphics.Point;
+import android.nfc.Tag;
 import android.os.Bundle;
+import android.os.Handler;
 import android.util.Log;
 import android.view.Display;
 import android.view.Surface;
@@ -33,11 +39,69 @@ import android.view.Window;
 import android.view.View.OnClickListener;
 import android.view.View.OnLongClickListener;
 import android.view.WindowManager;
+import android.view.animation.Animation;
+import android.view.animation.AnimationUtils;
+import android.view.animation.LinearInterpolator;
+import android.widget.Toast;
 
 public class Launcher extends Activity implements OnClickListener,
         OnLongClickListener, LauncherModel.Callbacks{
+    
+    private class WallpaperChangedIntentReceiver extends BroadcastReceiver {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            mDragLayer.updateWallpaper();
+        }
+    }
+
+    private class AppWidgetResetObserver extends ContentObserver {
+        @Override
+        public void onChange(boolean flag){
+            onAppWidgetReset();
+        }
+
+        public AppWidgetResetObserver() {
+            super(new Handler());
+        }
+    }
+
+    private class ScreenOnOffReceiver extends BroadcastReceiver {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (Intent.ACTION_SCREEN_OFF.equals(intent.getAction())){
+                LauncherModel.flashDelayedUpdateItemFlags(context);
+            }
+        }
+    }
+
+    class Padding {
+        int bottom;
+        int left;
+        int right;
+        int top;
+
+        Padding() {
+            left = 0;
+            right = 0;
+            top = 0;
+            bottom = 0;
+        }
+    }
+
+    private static class LocaleConfiguration {
+
+        public String locale;
+        public int mcc;
+        public int mnc;
+
+        private LocaleConfiguration() {
+            mcc = -1;
+            mnc = -1;
+        }
+    }
+    
     /******* 常量 ********/
-    static final private String LTAG = "ZwLauncher";
+    static final private String TAG = "ZwLauncher";
     static final int APPWIDGET_HOST_ID = 1024;
     
     /******* 状态  ********/
@@ -54,7 +118,9 @@ public class Launcher extends Activity implements OnClickListener,
     private boolean mRestoring = false;
     private boolean mWaitingForResult;
     private boolean mOnResumeNeedsLoad;
-
+    private Bundle mSavedInstanceState;
+    private Bundle mSavedState;
+        
     /// M: 跟踪用户是否离开Launcher的行为状态
     private static boolean sPausedFromUserAction = false;
     
@@ -62,23 +128,40 @@ public class Launcher extends Activity implements OnClickListener,
     private DragLayer mDragLayer;
     private DragController mDragController;
     private Workspace mWorkspace;
+    private ValueAnimator mDimAnim;
+    private View mScreen;
     
     // HOTSEAT区域
     private HotSeats mHotSeats;
+    private Animation mHotseatEditingEnter;
+    private Animation mHotseatEditingExit;
+    
+    // 删除区
+    private Animation mDeleteZoneEditingEnter;
+    private Animation mDeleteZoneEditingExit;
+    
+    // WIDGET区域
+    private Animation mWidgetEditingEnter;
+    private Animation mWidgetEditingExit;
     
     // 桌面背景
     private Background mDragLayerBackground;
     private Point mTmpPoint = new Point();
+    
+    // 桌面缩略图
+    private WorkspaceThumbnailView mWorkspacePreview;
     
     /// M: 静态变量标识本地信息是否变更
     private static boolean sLocaleChanged = false;
     
     /******* 数据 ********/
     private LauncherModel mModel;
-
+    private LauncherAppWidgetHost mAppWidgetHost;
     private static HashMap mFolders = new HashMap();
     private IconCache mIconCache;
-
+    private ItemInfo mLastAddInfo;
+    private ApplicationsMessage mApplicationsMessage;
+    
     // 桌面内容
     private ArrayList<ItemInfo> mDesktopItems = new ArrayList();
 
@@ -86,7 +169,18 @@ public class Launcher extends Activity implements OnClickListener,
     
     // 桌面错误是打印消息
     static final ArrayList<String> sDumpLogs = new ArrayList<String>();
-    
+    private final ContentObserver mWidgetObserver = new AppWidgetResetObserver();
+    private final ContentObserver mScreenChangeObserver = new ContentObserver(new Handler()) {
+
+        @Override
+        public void onChange(boolean flag) {
+            Log.d("Launcher", "onContentChange");
+            mWorkspace.loadScreens(false);
+            if (mLastAddInfo instanceof LauncherAppWidgetProviderInfo){
+                addAppWidget((LauncherAppWidgetProviderInfo)mLastAddInfo);
+            }
+        }
+    };
     
     public Launcher(){
         mWorkspaceLoading = true;
@@ -95,7 +189,7 @@ public class Launcher extends Activity implements OnClickListener,
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        Log.d(LTAG, "onCreate");
+        Log.d(TAG, "onCreate");
         Window localWindow = getWindow();
         localWindow.setFlags(WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN);
         localWindow.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
@@ -109,6 +203,10 @@ public class Launcher extends Activity implements OnClickListener,
         // 分配拖动控制器 
         mDragController = new DragController(this);
         registerContentObservers();
+        
+        // 应用消息
+        mApplicationsMessage = new ApplicationsMessage(this);
+        
         setWallpaperDimension();
         
         
@@ -137,8 +235,12 @@ public class Launcher extends Activity implements OnClickListener,
 
     private void registerContentObservers(){
         ContentResolver contentResolver = getContentResolver();
-        //contentResolver.registerContentObserver(LauncherProvider.CONTENT_APPWIDGET_RESET_URI, true, mWidgetObserver);
-        //contentResolver.registerContentObserver(LauncherSettings.Screens.CONTENT_URI, true, mScreenChangeObserver);
+        contentResolver.registerContentObserver(LauncherProvider.CONTENT_APPWIDGET_RESET_URI, true, mWidgetObserver);
+        contentResolver.registerContentObserver(LauncherSettings.Screens.CONTENT_URI, true, mScreenChangeObserver);
+    }
+    
+    public static final boolean isHardwareAccelerated() {
+        return mIsHardwareAccelerated;
     }
     
     private void setWallpaperDimension() {
@@ -164,6 +266,30 @@ public class Launcher extends Activity implements OnClickListener,
             height = mTmpPoint.y;
         }
         wallpaperManager.suggestDesiredDimensions(width * 2, height);
+    }
+    
+    private void setupAnimations(){
+        mDeleteZoneEditingEnter = AnimationUtils.loadAnimation(this, R.anim.deletezone_editing_enter);
+        mDeleteZoneEditingExit = AnimationUtils.loadAnimation(this, R.anim.deletezone_editing_exit);
+        mHotseatEditingEnter = AnimationUtils.loadAnimation(this, R.anim.hotseat_editing_enter);
+        mHotseatEditingExit = AnimationUtils.loadAnimation(this, R.anim.hotseat_editing_exit);
+        mWidgetEditingEnter = AnimationUtils.loadAnimation(this, R.anim.widget_editing_enter);
+        mWidgetEditingExit = AnimationUtils.loadAnimation(this, R.anim.widget_editing_exit);
+        mDimAnim = new ValueAnimator();
+        mDimAnim.setInterpolator(new LinearInterpolator());
+        mDimAnim.setDuration(getResources().getInteger(R.integer.config_animDuration));
+        mDimAnim.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+            @Override
+            public void onAnimationUpdate(ValueAnimator valueanimator) {
+                  float f = ((Float)valueanimator.getAnimatedValue()).floatValue();
+                  mScreen.setAlpha(f);
+            }
+        });
+
+    }
+    
+    private void onAppWidgetReset() {
+        mAppWidgetHost.startListening();
     }
     
     /**
@@ -215,6 +341,7 @@ public class Launcher extends Activity implements OnClickListener,
     protected void onStart() {
         super.onStart();
         mWorkspace.onStart();
+        mApplicationsMessage.requestUpdateMessages();
     }
 
     @Override
@@ -237,12 +364,9 @@ public class Launcher extends Activity implements OnClickListener,
         mModel.stopLoader();
         launcherapplication.setLauncher(null);
         unbindDesktopItems();
-        // Disconnect any of the callbacks and drawables associated with ItemInfos on the workspace
-        // to prevent leaking Launcher activities on orientation change.
-        if (mModel != null) {
-            mModel.unbindItemInfosAndClearQueuedBindRunnables();
-        }
+        
         mWorkspace.onDestory();
+        mApplicationsMessage.destory();
         finishLoading();
     }
 
@@ -261,9 +385,21 @@ public class Launcher extends Activity implements OnClickListener,
         startActivity(intent, options);
     }
     
-    @Override
-    public void startActivity(Intent intent, Bundle options) {
-        super.startActivity(intent);
+    public void startActivity(Intent intent, Object obj) {
+        try {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            if (obj instanceof ShortcutInfo) {
+                ShortcutInfo shortcutinfo = (ShortcutInfo)obj;
+                shortcutinfo.onLaunch();
+                LauncherModel.updateItemFlagsInDatabaseDelayed(this, shortcutinfo);
+                mApplicationsMessage.onLaunchApplication(intent.getComponent());
+            }
+            startActivity(intent);
+        } catch (NullPointerException e) {
+            Toast.makeText(this, R.string.start_activity_failed, 0).show();
+            Log.e(TAG, (new StringBuilder()).append("Launcher cannot start this activity(app2sd?)tag=").
+                    append(obj).append(" intent=").append(intent).toString(), e);
+        }
     }
 
     private void setupViews() {
@@ -276,25 +412,40 @@ public class Launcher extends Activity implements OnClickListener,
         mDragLayer.setDragController(dragController);
         mDragLayer.setLauncher(this);
         
+        mScreen = findViewById(R.id.screen);
+        
+        mWorkspace = (Workspace)mDragLayer.findViewById(R.id.workspace);
+        Workspace workspace = mWorkspace;
+        
+        mWorkspacePreview = (WorkspaceThumbnailView)mDragLayer.findViewById(R.id.workspace_preview);
+        workspace.setHapticFeedbackEnabled(false);
+        workspace.setOnLongClickListener(this);
+        workspace.setDragController(dragController);
+        workspace.setLauncher(this);
+        workspace.setThumbnailView(mWorkspacePreview);
+        
         // HOTSEAT
         mHotSeats = (HotSeats)mDragLayer.findViewById(R.id.hot_seats);
         mHotSeats.setLauncher(this);
         mHotSeats.setDragController(dragController);
         
-        mWorkspace = (Workspace)mDragLayer.findViewById(R.id.workspace);
-        Workspace workspace = mWorkspace;
-        workspace.setHapticFeedbackEnabled(false);
-        workspace.setOnLongClickListener(this);
-        workspace.setDragController(dragController);
-        workspace.setLauncher(this);
+        setupAnimations();
     }
 
     public IconCache getIconCache(){
         return mIconCache;
     }
     
+    int addAppWidget(LauncherAppWidgetProviderInfo launcherappwidgetproviderinfo){
+        return 0;
+    }
+    
     public void bindAppMessage(ShortcutIcon shortcuticon, ComponentName componentname){
-        //mApplicationsMessage.addApplication(shortcuticon, componentname);
+        mApplicationsMessage.addApplication(shortcuticon, componentname);
+    }
+    
+    public Workspace getWorkspace() {
+        return mWorkspace;
     }
     
     /**
@@ -339,6 +490,12 @@ public class Launcher extends Activity implements OnClickListener,
         return ShortcutIcon.fromXml(R.layout.application, this, viewgroup, shortcutinfo);
     }
     
+    /**
+     * 功能： 创建ITEM图标
+     * @param viewgroup
+     * @param iteminfo
+     * @return
+     */
     public ItemIcon createItemIcon(ViewGroup viewgroup, ItemInfo iteminfo){
         ItemIcon itemIcon;
         if (iteminfo instanceof FolderInfo) {
@@ -402,8 +559,33 @@ public class Launcher extends Activity implements OnClickListener,
             } else {
                 folderinfo.add(shortcutinfo);
                 folderinfo.notifyDataSetChanged();
-                //mApplicationsMessage.updateFolderMessage(folderinfo);
+                mApplicationsMessage.updateFolderMessage(folderinfo);
             }
+        }
+    }
+    
+    public boolean isWorkspaceLocked() {
+        boolean flag;
+        if (!mWorkspaceLoading && !mWaitingForResult){
+            flag = false;
+        } else {
+            flag = true;
+        }
+        return flag;
+    }
+    
+    public void showPreview(final boolean show){
+        if (!isWorkspaceLocked()){
+            if (show) {
+                mDragLayerBackground.setEnterPreviewMode();
+                mHotSeats.setVisibility(View.INVISIBLE);
+                mHotSeats.startAnimation(mHotseatEditingEnter);
+            } else {
+                mDragLayerBackground.setExitPreviewMode();
+                mHotSeats.setVisibility(View.VISIBLE);
+                mHotSeats.startAnimation(mHotseatEditingExit);
+            }
+            mWorkspace.showPreview(show);
         }
     }
     
@@ -463,11 +645,11 @@ public class Launcher extends Activity implements OnClickListener,
      * 功能： 将读取的项放入到桌面及放入数据库中存储
      */
     @Override
-    public void bindItems(ArrayList<ItemInfo> arraylist, int i, int j) {
+    public void bindItems(ArrayList<ItemInfo> arraylist, int start, int end) {
         if (mWorkspace == null) return;
-        int k = i;
-        while (k < j) {
-            ItemInfo iteminfo = arraylist.get(k);
+        
+        for (int i = start; i < end; i++) {
+            ItemInfo iteminfo = arraylist.get(i);
             
             if (iteminfo.container == LauncherSettings.Favorites.CONTAINER_DESKTOP){
                 mDesktopItems.add(iteminfo);
@@ -479,7 +661,6 @@ public class Launcher extends Activity implements OnClickListener,
                 addItem(iteminfo, false);
                 break;
             }
-            k++;
         }
         mWorkspace.requestLayout();
     }
@@ -504,7 +685,18 @@ public class Launcher extends Activity implements OnClickListener,
 
     @Override
     public void finishBindingSavedItems() {
+        if (mSavedState != null) {
+            if (!mWorkspace.hasFocus()){
+                mWorkspace.getCurrentScreen().requestFocus();
+            }
+            mSavedState = null;
+        }
+        if (mSavedInstanceState != null) {
+            super.onRestoreInstanceState(mSavedInstanceState);
+            mSavedInstanceState = null;
+        }
         mWorkspaceLoading = false;
+        mApplicationsMessage.requestUpdateMessages();
         mHotSeats.finishBinding();
     }
 

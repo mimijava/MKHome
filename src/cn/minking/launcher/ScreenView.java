@@ -1,5 +1,14 @@
 package cn.minking.launcher;
-
+/**
+ * 作者：      minking
+ * 文件名称:    ScreenView.java
+ * 创建时间：    2013
+ * 描述：  
+ * 更新内容
+ * ====================================================================================
+ * 20140228: 
+ * ====================================================================================
+ */
 import java.security.InvalidParameterException;
 
 import android.annotation.SuppressLint;
@@ -501,8 +510,8 @@ public class ScreenView extends ViewGroup {
     protected float mOverScrollRatio = 0.3333333F;
     protected boolean mScrollWholeScreen = false;
     private boolean mTouchIntercepted = false;
-    private float mLastMotionX = 0.0F;
-    private float mLastMotionY = 0.0F;
+    public float mLastMotionX = 0.0F;
+    public float mLastMotionY = 0.0F;
     private int mPaddingLeft = 0;
     private int mPaddingRight = 0;
     private int mPaddingTop = 0;
@@ -1377,6 +1386,11 @@ public class ScreenView extends ViewGroup {
         return view;
     }
     
+    public void setIndicatorBarVisibility(int i) {
+        setSeekBarVisibility(i);
+        setSlideBarVisibility(i);
+    }
+
     /*
      * 返回当前的显示的页号
      */

@@ -79,29 +79,31 @@ public class HotSeats extends LinearLayout
     }
     
     /**
-     * 
+     * 功能： 给Item分配Seat位置
      */
     private void setSeat(int i, ItemInfo iteminfo){
+        // i在范围之内，则当前位置上与Item不为同样的
         if ((i >= 0 || i < MAX_SEATS) && mCurrentSeats[i] != iteminfo){
             mCurrentSeats[i] = iteminfo;
             HotSeatButton hotseatbutton = (HotSeatButton)getChildAt(i);
             hotseatbutton.unbind(mDragController);
             if (iteminfo == null) {
-                android.widget.LinearLayout.LayoutParams layoutparams 
-                    = (android.widget.LinearLayout.LayoutParams)hotseatbutton.getLayoutParams();
+                LinearLayout.LayoutParams layoutparams 
+                    = (LinearLayout.LayoutParams)hotseatbutton.getLayoutParams();
                 layoutparams.width = 0;
                 layoutparams.weight = 0F;
                 hotseatbutton.setLayoutParams(layoutparams);
             } else {
                 if (iteminfo != PLACE_HOLDER_SEAT){
+                    // 给Item分配图标
                     ItemIcon itemicon = mLauncher.createItemIcon(this, iteminfo);
                     itemicon.setCompactViewMode(true);
                     hotseatbutton.bind(itemicon, mDragController);
                 }
                 hotseatbutton.setTag(iteminfo);
                 hotseatbutton.setOnLongClickListener(this);
-                android.widget.LinearLayout.LayoutParams layoutparams 
-                    = (android.widget.LinearLayout.LayoutParams)hotseatbutton.getLayoutParams();
+                LinearLayout.LayoutParams layoutparams 
+                    = (LinearLayout.LayoutParams)hotseatbutton.getLayoutParams();
                 layoutparams.width = -1;
                 layoutparams.weight = 1F;
                 hotseatbutton.setLayoutParams(layoutparams);

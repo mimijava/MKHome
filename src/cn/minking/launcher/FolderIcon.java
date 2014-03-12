@@ -34,4 +34,36 @@ public class FolderIcon extends ItemIcon
     public static final Bitmap loadFolderIconBitmap()    {
         return null;
     }
+    @Override
+    public boolean acceptDrop(DragObject dragobject) {
+        // TODO Auto-generated method stub
+        return false;
+    }
+    @Override
+    public DropTarget getDropTargetDelegate(DragObject dragobject) {
+        // TODO Auto-generated method stub
+        return null;
+    }
+    @Override
+    public void onDragEnter(DragObject dragobject) {
+        // TODO Auto-generated method stub
+        
+    }
+    @Override
+    public void onDragExit(DragObject dragobject) {
+        // TODO Auto-generated method stub
+        
+    }
+    @Override
+    public void onDragOver(DragObject dragobject) {
+        // TODO Auto-generated method stub
+        
+    }
+    @Override
+    public boolean onDrop(DragObject dragobject) {
+        // TODO Auto-generated method stub
+        return false;
+    }
+    
+    
 }

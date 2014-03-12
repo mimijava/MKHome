@@ -302,7 +302,7 @@ public class LauncherProvider extends ContentProvider {
         Bundle bd = null;
         if (cmd.equals("updateInstalledComponentsArg")) {
             ScreenUtils.updateInstalledComponentsArg(getContext());
-        }else {
+        }else if(cmd.equals("ensureItemUniquePosition")){
             if (ScreenUtils.verifyItemPosition(sOpenHelper.getWritableDatabase(), Long.parseLong(id))){
                 bd = new Bundle();
                 bd.putBoolean("resultBoolean", true);       
@@ -875,6 +875,15 @@ public class LauncherProvider extends ContentProvider {
             return k;
         }
         
+        private void createPackagesTable(SQLiteDatabase db){
+            // 创建 screens 数据库表
+            db.execSQL("DROP TABLE IF EXISTS packages");
+            db.execSQL("CREATE TABLE packages("
+                    + "_id INTEGER PRIMARY KEY,"
+                    + "name TEXT,"
+                    + "keepItem BOOLEAN);");
+        }
+        
         /**
          * 功能： 创建screen表， screenOrder来排列屏幕的位置 
          * @param db
@@ -960,6 +969,7 @@ public class LauncherProvider extends ContentProvider {
             loadFavorites(db);
             loadPresetsApps(db);
             createScreensTable(db);
+            createPackagesTable(db);
         }
 
         @Override
