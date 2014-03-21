@@ -10,6 +10,7 @@ package cn.minking.launcher;
  * ====================================================================================
  */
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.util.AttributeSet;
 import android.view.LayoutInflater;
 import android.view.ViewGroup;
@@ -25,9 +26,11 @@ public class ShortcutIcon extends ItemIcon
     private Animation mFolderCreationBgEnter;
     private Animation mFolderCreationBgExit;
     private Launcher mLauncher;
+    private Context mContext;
     
     public ShortcutIcon(Context context, AttributeSet attributeSet){
         super(context, attributeSet);
+        mContext = context;
         mFolderCreationBgEnter = null;
         mFolderCreationBgExit = null;
     }
@@ -64,9 +67,10 @@ public class ShortcutIcon extends ItemIcon
         super.onFinishInflate();
         mFolderCreationBg = (ImageView)findViewById(R.id.icon_folder_creation_bg);
         if (mFolderCreationBg != null){
-            android.graphics.Bitmap bitmap = FolderIcon.loadFolderIconBitmap();
-            if (bitmap != null)
+            Bitmap bitmap = FolderIcon.loadFolderIconBitmap(mContext);
+            if (bitmap != null) {
                 mFolderCreationBg.setImageBitmap(bitmap);
+            }
         }
     }
 

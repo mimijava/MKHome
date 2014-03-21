@@ -25,6 +25,11 @@ public class ScreenUtils {
         long screenId;
         int screenOrder;
 
+        /**
+         * 描述： 屏幕的ID及排序
+         * @param id
+         * @param order
+         */
         public ScreenInfo(long id, int order){
             screenId = id;
             screenOrder = order;
@@ -82,13 +87,15 @@ public class ScreenUtils {
         if (id >= 0L) {
             Log.d(TAG, (new StringBuilder()).append("Updating home screen item ").append(id).toString());
             if (verifyItemPosition(db, id)) {
-                CellInfo cellinfo = findEmptyCell(context, db, screenInfos, 1, 1);
-                if (cellinfo != null){
-                    db.insert("favorites", null, buildValuesForInsert(context, resolveinfo, cellinfo));
-                }
                 updateFavorite(db, id, buildValuesForUpdate(context, resolveinfo));
+                return;
             }
         }
+        CellInfo cellinfo = findEmptyCell(context, db, screenInfos, 1, 1);
+        if (cellinfo != null){
+            db.insert("favorites", null, buildValuesForInsert(context, resolveinfo, cellinfo));
+        }
+        
     }
     
     private static ContentValues buildValuesForInsert(
@@ -101,8 +108,8 @@ public class ScreenUtils {
         contentvalues.put("screen", Long.valueOf(cellinfo.screenId));
         contentvalues.put("cellX", Integer.valueOf(cellinfo.cellX));
         contentvalues.put("cellY", Integer.valueOf(cellinfo.cellY));
-        contentvalues.put("spanX", Integer.valueOf(1));
-        contentvalues.put("spanY", Integer.valueOf(1));
+        contentvalues.put("spanX", Integer.valueOf(cellinfo.spanX));
+        contentvalues.put("spanY", Integer.valueOf(cellinfo.spanY));
         if (LOGD) {
             Object aobj[] = new Object[4];
             aobj[0] = contentvalues.get("title");
@@ -134,18 +141,25 @@ public class ScreenUtils {
         db.delete("favorites", "_id=?", as);
     }
     
+    /**
+     * 描述： 如果排序的屏幕数不足，则创建屏幕给予放ITEM
+     * @param context
+     * @param sqlitedatabase
+     * @param screenInfos
+     * @param screenOrder
+     */
     private static void ensureEnoughScreensForCell(
-            Context context, SQLiteDatabase sqlitedatabase, ArrayList<ScreenInfo> screenInfos, int i){
-        int j = Math.min(i + 1, 30);
-        int k = screenInfos.size();
-        while(k < j) {
+            Context context, SQLiteDatabase sqlitedatabase, ArrayList<ScreenInfo> screenInfos, int screenOrder){
+        int sOrder = Math.min(screenOrder + 1, 30);
+        
+        for (int k = screenInfos.size(); k < sOrder; k++){
             boolean flag;
-            if (k != j - 1)
+            if (k != sOrder - 1){
                 flag = false;
-            else
+            } else { 
                 flag = true;
+            }
             screenInfos.add(insertScreen(context, sqlitedatabase, k, flag));
-            k++;
         }
     }
     
@@ -189,16 +203,11 @@ public class ScreenUtils {
         return flag;
     }
     
-    private static void fillOccupied(int ai[][], int i, int j, int k, int l){
-        int i1 = i;
-        if (i1 >= i + k) {
-            return;
-        }
-        int j1 = j;
-        while (j1 >= j + l) {
-            i1++;
-            ai[i1][j1] = (j1 - j) + 1;
-            j1++;
+    private static void fillOccupied(int occupied[][], int cx, int cy, int sx, int sy){
+        for (int x = cx; x < cx + sx; x++) {
+            for (int y = cy; y < cy + sy; y ++){
+                occupied[x][y] = 1;
+            }
         }
     }
     
@@ -214,32 +223,31 @@ public class ScreenUtils {
         return context.getPackageManager().queryIntentActivities(intent, PackageManager.PERMISSION_GRANTED);
     }
     
-    private static CellInfo findEmptyCell(Context context, SQLiteDatabase sqlitedatabase, int i, int j){
+    private static CellInfo findEmptyCell(Context context, SQLiteDatabase db, int sx, int sy){
         CellInfo cellinfo = null;
         
         CellInfo cellinfoT = new CellInfo();
         cellinfoT.screenOrder = 0;
         cellinfoT.cellX = 0;
         cellinfoT.cellY = 0;
-        cellinfoT.spanX = i;
-        cellinfoT.spanY = j;
-        cellinfoT = findEmptyCell(context, sqlitedatabase, cellinfoT, 
+        cellinfoT.spanX = sx;
+        cellinfoT.spanY = sy;
+        cellinfoT = findEmptyCell(context, db, cellinfoT, 
                 "container=-100 AND screenOrder=(SELECT MAX(screenOrder) "
                 + "FROM favorites JOIN screens ON (screen=screens._id)  "
                 + "WHERE container=-100)", null, true);
         if (cellinfoT.screenOrder >= 30){
-            String as[] = new String[1];
-            int k = 29;
-            while (k >= 0) {
-                cellinfoT.screenOrder = k;
-                as[0] = String.valueOf(k);
-                cellinfoT = findEmptyCell(context, sqlitedatabase, cellinfoT, 
+            for (int i = 29; i > 0 ; i--) {
+                cellinfoT.screenOrder = i;
+                String as[] = new String[]{String.valueOf(i)};
+                cellinfoT = findEmptyCell(context, db, cellinfoT, 
                         "container=-100 AND screenOrder=?", as, false);
-                if (cellinfoT.screenOrder == k){
+                if (cellinfoT.screenOrder == i){
                     break;
                 }
-                k--;
             }
+            cellinfo = cellinfoT;
+        } else {
             cellinfo = cellinfoT;
         }
         
@@ -253,26 +261,18 @@ public class ScreenUtils {
                 "favorites JOIN screens ON (screen=screens._id) ", 
                 AppPlaceQuery.COLUMNS, s, as, null, null, "cellY ASC, cellX ASC");
         
-        int k = ResConfig.getCellCountX();
-        int i = ResConfig.getCellCountY();
-        int at[] = new int[]{k, i};
+        int at[] = new int[]{ResConfig.getCellCountX(), ResConfig.getCellCountY()};
         
         int[][] occupied = (int[][])Array.newInstance(Integer.TYPE, at);
         
         try {
-            if (cursor != null && cursor.moveToNext()){
-                int id = cursor.getInt(0);
-                if (id <= cellinfo.screenOrder){
-                    int j = cellinfo.screenOrder;
-                    if (id >= j){
-                        fillOccupied(occupied, cursor.getInt(1), cursor.getInt(2), 
-                                cursor.getInt(3), cursor.getInt(4));
-                    } else {
-                        
-                    }
-                } else {
-                    cellinfo.screenOrder = id;
-                }
+            while (cursor != null && cursor.moveToNext()){
+                int screenOrder = cursor.getInt(0);
+                if (screenOrder != cellinfo.screenOrder){
+                    cellinfo.screenOrder = screenOrder;
+                } 
+                fillOccupied(occupied, cursor.getInt(1), cursor.getInt(2), 
+                        cursor.getInt(3), cursor.getInt(4));
             }
             cursor.close();
         } catch (Exception e) {
@@ -294,11 +294,11 @@ public class ScreenUtils {
     
     static CellInfo findEmptyCell(
             Context context, SQLiteDatabase db, 
-            ArrayList<ScreenInfo> screenInfos, int i, int j){
+            ArrayList<ScreenInfo> screenInfos, int sx, int sy){
         CellInfo cellinfo = null;
         
-        if (i <= ResConfig.getCellCountX() && j <= ResConfig.getCellCountY()) {
-            cellinfo = findEmptyCell(context, db, i, j);
+        if (sx <= ResConfig.getCellCountX() && sy <= ResConfig.getCellCountY()) {
+            cellinfo = findEmptyCell(context, db, sx, sy);
             if (cellinfo != null && cellinfo.screenOrder < 30) {
                 ensureEnoughScreensForCell(context, db, screenInfos, cellinfo.screenOrder);
                 cellinfo.screenId = (screenInfos.get(cellinfo.screenOrder)).screenId;
@@ -314,43 +314,36 @@ public class ScreenUtils {
     }
     
     private static boolean findEmptyCell(int occupied[][], CellInfo cellinfo, boolean flag){
-        boolean bOccupied = false;
-        int x = ResConfig.getCellCountX() - 1;
-        int y = ResConfig.getCellCountY() - 1;
+        boolean bFind = false;
         
-        
-        if (x + cellinfo.spanX > ResConfig.getCellCountX() 
-                || y + cellinfo.spanY > ResConfig.getCellCountY()){
-            
+        for (int x = ResConfig.getCellCountX() - 1; x >= 0; x--){
+            for (int y = ResConfig.getCellCountY() - 1; y >= 0; y--){
+                if (x + cellinfo.spanX > ResConfig.getCellCountX() 
+                        || y + cellinfo.spanY > ResConfig.getCellCountY()){
+                    break;
+                }
+                if (!testOccupied(occupied, x, y, cellinfo.spanX, cellinfo.spanY)){
+                    bFind = true;
+                    cellinfo.cellX = x;
+                    cellinfo.cellY = y;
+                    break;
+                }
+            }
+            if (bFind) {
+                break;
+            }
         }
         
-        if (testOccupied(occupied, x, y, cellinfo.spanX, cellinfo.spanY)){
-            cellinfo.cellX = x;
-            cellinfo.cellY = y;
-            bOccupied = true;
-            x--;
-        }
-        
-        int k;
-        
-        if (!bOccupied || cellinfo.cellY != y || cellinfo.spanX <= 1 && cellinfo.spanY <= 1){
-            return bOccupied;
-        }else {
-            y = occupied[x][y] - 1;
-            k = cellinfo.cellY;
-            x = cellinfo.cellY - 1;
-        }
-        
-        if (x >= 0 && cellinfo.cellY - x <= y 
-                && testOccupied(occupied, cellinfo.cellX, x, cellinfo.spanX, cellinfo.spanY)){
-            k = x;
-            x--;
-        } else {
-            cellinfo.cellY = k;
-        }
-        return true;
+        return bFind;
     }
     
+    /**
+     * 功能： 根据给出的package名称得到返回的ID列表
+     * @param context
+     * @param db
+     * @param packageName
+     * @return
+     */
     private static ArrayList<Long> getPackageItemIds(Context context, 
             SQLiteDatabase db, String packageName){
         Cursor cursor;
@@ -375,6 +368,14 @@ public class ScreenUtils {
         return idList;
     }
     
+    /**
+     * 功能： 往数据库中添加新屏幕
+     * @param context
+     * @param db
+     * @param order
+     * @param flag
+     * @return
+     */
     private static ScreenInfo insertScreen(Context context, 
             SQLiteDatabase db, int order, boolean flag){
         ContentValues contentvalues = new ContentValues();
@@ -390,23 +391,28 @@ public class ScreenUtils {
         return new ScreenInfo(id, order);
     }
     
-
+    /**
+     * 描述： 从数据库中读取屏幕信息
+     * @param db
+     * @return
+     */
     static ArrayList<ScreenInfo> loadScreens(SQLiteDatabase db){
         Cursor cursor = db.query("screens", 
                 ScreensQuery.COLUMNS, null, null, null, null, "screenOrder ASC");
         
         if (cursor == null) return null;
         
-        ArrayList<ScreenInfo> screenInfos = new ArrayList<ScreenInfo>(cursor.getCount());
+        // 根据得到的屏幕数量创建screen list
+        ArrayList<ScreenInfo> screenList = new ArrayList<ScreenInfo>(cursor.getCount());
         try {
             while (cursor.moveToNext()) {
-                screenInfos.add(new ScreenInfo(cursor.getLong(0), cursor.getInt(1)));
+                screenList.add(new ScreenInfo(cursor.getLong(0), cursor.getInt(1)));
             }   
             cursor.close();
         } catch (Exception e) {
             cursor.close();
         }
-        return screenInfos;
+        return screenList;
     }
     
     private static void notifyChange(Context context, Uri uri){
@@ -424,22 +430,21 @@ public class ScreenUtils {
     }
     
     private static boolean testOccupied(int occupied[][], int cx, int cy, int sx, int xy){
-        boolean flag = false;
+        boolean bOccupied = false;
         
-        int x = cx;
-        int y = cy;
-        
-        while (x >= cx + sx) {
-            while (occupied[x][y] != 0) {
-                if (y >= cy + xy) {
-                    x++;
+        for (int x = cx; x < cx + sx; x++) {
+            for (int y = cy; y < cy + xy; y++) {
+                if (occupied[x][y] != 0) {
+                    bOccupied = true;
+                    break;
                 }
-                y++;
+            }
+            if (bOccupied) {
+                break;
             }
         }
-        flag = true;        
         
-        return flag;
+        return bOccupied;
     }
     
     private static void updateFavorite(SQLiteDatabase db, long id, ContentValues values){

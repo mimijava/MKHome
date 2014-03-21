@@ -26,4 +26,41 @@
     <item type="id" name="celllayout_thumbnail_for_workspace_preview_dirty" />
     <item type="id" name="celllayout_thumbnail_for_workspace_editing_preview_dirty" />
     <item type="id" name="workspace_preview"></item>
+    <item type="id" name="folder"></item>
+    <item type="id" name="folder_cling"></item>
+    <item type="id" name="close"></item>
+    <item type="id" name="folder_content"></item>
+    <item type="id" name="folder_header"></item>
+    <item type="id" name="confirm"></item>
+    <item type="id" name="title"></item>
+    <item type="id" name="rename_edit"></item>
+    <item type="id" name="item1"></item>
+    <item type="id" name="item2"></item>
+    <item type="id" name="item3"></item>
+    <item type="id" name="item4"></item>
+    <item type="id" name="preview_icons_container"></item>
+    <item type="id" name="folder_cover"></item>
+    <item type="id" name="thumbnail"></item>
+    <item type="id" name="home_mark"></item>
+    <item type="id" name="delete"></item>
+    
+    <item type="id" name="editModeBottomBar"></item>
+    <item type="id" name="emptyTip"></item>
+    <item type="id" name="txtEmptyTip"></item>
+    <item type="id" name="sceneContent"></item>
+    <item type="id" name="scrollableScreen"></item>
+    <item type="id" name="backgroundScreen"></item>
+    <item type="id" name="freeLayout"></item>
+    <item type="id" name="dockScreen"></item>
+    <item type="id" name="foregroundScreen"></item>
+    
+    <item type="id" name="selector"></item>
+    <item type="id" name="container"></item>
+    <item type="id" name="buttons_container"></item>
+    <item type="id" name="btnCancel"></item>
+    <item type="id" name="btnOk"></item>
+    
+    <item type="id" name="txtName"></item>
+    <item type="id" name="txtSize"></item>
+    <item type="id" name="imgPreview"></item>
 </resources>

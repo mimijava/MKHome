@@ -71,6 +71,8 @@
 		</cn.minking.launcher.DeleteZone>
     </FrameLayout>
     
+    <include layout="@layout/folder_cling" />
+    
     <!-- 小图标状态栏显示区域 -->
     <FrameLayout 
         android:paddingTop="@dimen/status_bar_height" 

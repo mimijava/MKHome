@@ -87,54 +87,59 @@ public class AllAppsList {
     }
     
     private void addApp(Context context, ResolveInfo resolveinfo){
-        ShortcutInfo shortcutinfo = new ShortcutInfo(context, resolveinfo);
-        loadPosition(context, resolveinfo.activityInfo.packageName, shortcutinfo);
-        add(shortcutinfo);
-        loadShortcuts(context, shortcutinfo.intent, resolveinfo.activityInfo.packageName);
+        ShortcutInfo shortcutInfo = new ShortcutInfo(context, resolveinfo);
+        loadPosition(context, resolveinfo.activityInfo.packageName, shortcutInfo);
+        add(shortcutInfo);
+        loadShortcuts(context, shortcutInfo.intent, resolveinfo.activityInfo.packageName);
     }
     
-    private void loadPosition(Context context, String packageName, ShortcutInfo shortcutinfo){
+    private void loadPosition(Context context, String packageName, ShortcutInfo shortcutInfo){
         ContentResolver contentResolver = context.getContentResolver();
-        sSelectionArgs[0] = shortcutinfo.intent.toUri(0).toString();
+        sSelectionArgs[0] = shortcutInfo.intent.toUri(0).toString();
         sSelectionArgs[1] = packageName;
         
         Cursor cursor = contentResolver.query(LauncherSettings.Favorites.CONTENT_URI,
-                PositionQuery.COLUMNS, "intent=? AND iconPackage=?", sSelectionArgs, null);
+                PositionQuery.COLUMNS, "intent=? AND iconPackage=? AND itemType=0", sSelectionArgs, null);
         
         if (cursor == null) {
-            shortcutinfo.screenId = -1L;
-            Log.e(TAG, (new StringBuilder()).append("Can't load postion for app ").append(shortcutinfo.title).toString());
+            shortcutInfo.screenId = -1L;
+            Log.e(TAG, (new StringBuilder()).append("Can't load postion for app ").append(shortcutInfo.title).toString());
             return;
         }
         
         try {
             if (cursor.moveToNext()) {
-                shortcutinfo.screenId = cursor.getInt(0);
-                shortcutinfo.cellX = cursor.getInt(1);
-                shortcutinfo.cellY = cursor.getInt(2);
-                shortcutinfo.container = cursor.getLong(3);
-                shortcutinfo.id = cursor.getInt(4);
-                shortcutinfo.spanY = 1;
-                shortcutinfo.spanX = 1;
+                // 如果已经存储在数据库中，则直接读取屏幕、位置、大小、ID、容器
+                shortcutInfo.screenId = cursor.getInt(0);
+                shortcutInfo.cellX = cursor.getInt(1);
+                shortcutInfo.cellY = cursor.getInt(2);
+                shortcutInfo.container = cursor.getLong(3);
+                shortcutInfo.id = cursor.getInt(4);
+                shortcutInfo.spanY = 1;
+                shortcutInfo.spanX = 1;
                 
                 Object aobj[] = new Object[5];
-                aobj[0] = shortcutinfo.title;
-                aobj[1] = Integer.valueOf(shortcutinfo.cellX);
-                aobj[2] = Integer.valueOf(shortcutinfo.cellY);
-                aobj[3] = Long.valueOf(shortcutinfo.screenId);
-                aobj[4] = Long.valueOf(shortcutinfo.container);
+                aobj[0] = shortcutInfo.title;
+                aobj[1] = Integer.valueOf(shortcutInfo.cellX);
+                aobj[2] = Integer.valueOf(shortcutInfo.cellY);
+                aobj[3] = Long.valueOf(shortcutInfo.screenId);
+                aobj[4] = Long.valueOf(shortcutInfo.container);
                 
-                Log.d(TAG, String.format("Loaded application %s at (%d, %d) of screen %d under container %d", aobj));
+                if (LOGD) Log.d(TAG, String.format("Loaded application %s at (%d, %d) of screen %d under container %d", aobj));
+            } else {
+                // 否则分配坐标及位置
+                shortcutInfo.screenId = -1L;
+                if (LOGD) Log.e(TAG, (new StringBuilder()).append("Can't load postion for app ").append(shortcutInfo.title).toString());
             }
         } catch (Exception e) {
-            Log.e(TAG, (new StringBuilder()).append("Can't load postion for app ").append(shortcutinfo.title).toString());
+            if (LOGD) Log.e(TAG, (new StringBuilder()).append("Can't load postion for app ").append(shortcutInfo.title).toString());
             if (cursor != null) cursor.close();
         }
         cursor.close();
     }
     
-    public void add(ShortcutInfo shortcutinfo){
-        added.add(shortcutinfo);
+    public void add(ShortcutInfo shortcutInfo){
+        added.add(shortcutInfo);
     }
     
     public void addPackage(Context context, String packageName){

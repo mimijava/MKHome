@@ -68,19 +68,19 @@ public class ApplicationsMessage{
 
     private void updateMessage(ComponentName componentname, String s, String s1, byte abyte0[]) {
         if (mLoadedApps.containsKey(componentname)) {
-            Object obj = (IconMessage)mLoadedApps.get(componentname);
-            ((IconMessage) (obj)).setMessage(s, s1, abyte0);
-            obj = (ShortcutInfo)((ShortcutIcon)obj).getTag();
-            updateFolderMessage(mLauncher.getParentFolderInfo(((ShortcutInfo) (obj))));
+            IconMessage iconMessage = (IconMessage)mLoadedApps.get(componentname);
+            iconMessage.setMessage(s, s1, abyte0);
+            ShortcutInfo shortcutInfo = (ShortcutInfo)((ShortcutIcon)iconMessage).getTag();
+            updateFolderMessage(mLauncher.getParentFolderInfo(shortcutInfo));
         }
     }
 
-    public void addApplication(ShortcutIcon shortcuticon, ComponentName componentname)
-    {
+    public void addApplication(ShortcutIcon shortcuticon, ComponentName componentname) {
         if (componentname != null) {
             if (mLoadedApps.containsKey(componentname)) {
                 IconMessage iconmessage = (IconMessage)mLoadedApps.get(componentname);
-                shortcuticon.setMessage(iconmessage.getMessageText(), iconmessage.getMessageTextBackground(), iconmessage.getMessageIconTile());
+                shortcuticon.setMessage(iconmessage.getMessageText(), 
+                        iconmessage.getMessageTextBackground(), iconmessage.getMessageIconTile());
                 mLoadedApps.remove(componentname);
             }
             mLoadedApps.put(componentname, shortcuticon);
@@ -97,20 +97,6 @@ public class ApplicationsMessage{
     }
 
     public void removeApplication(CharSequence charsequence) {
-        ArrayList<ComponentName> cnList = new ArrayList();
-        Iterator<ComponentName> iterator = mLoadedApps.keySet().iterator();
-        while(iterator.hasNext()) {
-            ComponentName componentname;
-            do{
-                Iterator<ComponentName> iterator2 = cnList.iterator();
-                while( iterator2.hasNext()){
-                    ComponentName cn = iterator2.next();
-                    mLoadedApps.remove(cn);
-                } 
-                componentname = iterator.next();
-            }while (!componentname.getPackageName().equals(charsequence)); 
-            cnList.add(componentname);
-        } 
     }
 
     public void requestUpdateMessages() {

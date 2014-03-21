@@ -60,6 +60,7 @@ import android.util.Log;
 import android.util.Xml;
 
 public class LauncherProvider extends ContentProvider {
+    /********* 常量 **********/
     private static final String TAG = "MKHome.Provider";
     private static final boolean LOGD = true;
     
@@ -74,19 +75,24 @@ public class LauncherProvider extends ContentProvider {
     
     static final String TABLE_FAVORITES = "favorites";
     static final String PARAMETER_NOTIFY = "notify";
-    static final String DB_CREATED_BUT_DEFAULT_WORKSPACE_NOT_LOADED =
-            "DB_CREATED_BUT_DEFAULT_WORKSPACE_NOT_LOADED";
-    static final String DEFAULT_WORKSPACE_RESOURCE_ID =
-            "DEFAULT_WORKSPACE_RESOURCE_ID";
+    static final String DB_CREATED_BUT_DEFAULT_WORKSPACE_NOT_LOADED = "DB_CREATED_BUT_DEFAULT_WORKSPACE_NOT_LOADED";
+    static final String DEFAULT_WORKSPACE_RESOURCE_ID = "DEFAULT_WORKSPACE_RESOURCE_ID";
     
+    
+    /********* 锁  **********/
     /// M: LOCK给数据库操作使用
     private final Object mLock = new Object();
     
+    
+    /********* 数据  **********/
     /// M: 保存场景数据
     private static DatabaseHelper sOpenHelper;
+    
+    // 桌面的屏幕信息数组列表，包括屏幕ID及排序信息
     private ArrayList<ScreenInfo> mScreens;
     
     
+    /********* 内部类 **********/
     /*
      * 查询数据库参数定义内部类
      */
@@ -164,8 +170,23 @@ public class LauncherProvider extends ContentProvider {
 
     @Override
     public Uri insert(Uri uri, ContentValues values) {
-        // TODO Auto-generated method stub
-        return null;
+        synchronized (mLock) {
+            Uri reUri = null;
+            SqlArguments sqlArguments = new SqlArguments(uri);
+            SQLiteDatabase db = sOpenHelper.getWritableDatabase();
+            if ("favorites".equals(sqlArguments.table)) {
+                Integer screen = values.getAsInteger("screen");
+                if (screen != null 
+                        && (screen.intValue() != -1 || ScreenUtils.fillEmptyCell(getContext(), db, loadScreens(db), values))) {
+                    long id = db.insert(sqlArguments.table, null, values);
+                    if (id > 0) {
+                        ScreenUtils.ensureEnoughScreensForItem(getContext(), db, loadScreens(db), id);
+                        reUri = ContentUris.withAppendedId(uri, id);
+                    }
+                }
+            }
+            return reUri;
+        }
     }
 
     /**
@@ -226,42 +247,36 @@ public class LauncherProvider extends ContentProvider {
                 sOpenHelper.updateMaxId(db);
                 i = 0;
             } else if ("screens".equals(sqlArguments.table)) {
-                String colum[] = new String[]{"screenOrder"};
-                Cursor cursor = db.query("screens", colum, null, null, null, null, null);
-                ArrayList<String> orderList = new ArrayList<String>();
-                if (cursor == null) {
-                    return 0;
-                }
-                while (cursor.moveToNext()) {
-                    orderList.add(String.valueOf(cursor.getInt(0)));
-                }
-                cursor.close();
-                
-                // 采用事务的方式进行数据库操作
-                db.beginTransaction();
-                int j = 0;
-                try {
-                    while (j < orderList.size()){
-                        ContentValues valuesT = new ContentValues();
-                        valuesT.put("screenOrder", Integer.valueOf(i));
-                        String table = sqlArguments.table;
-                        String as[] = new String[]{orderList.get(j)};
-                        
-                        i += db.update(table, valuesT, "_id=?", as);
-                        j++;
+                ArrayList<String> arraylist = values.getStringArrayList("screenOrder");
+                if (arraylist != null) {
+                    i = 0;
+                    // 采用事务的方式进行数据库操作
+                    db.beginTransaction();
+                    try {
+                        for (int j = 0; j < arraylist.size(); j++){
+                            ContentValues valuesT = new ContentValues();
+                            valuesT.put("screenOrder", Integer.valueOf(i));
+                            String table = sqlArguments.table;
+                            String as[] = new String[]{arraylist.get(j)};
+                            
+                            i += db.update(table, valuesT, "_id=?", as);
+                        }
+                        db.setTransactionSuccessful();
+                        db.endTransaction();
+                        mScreens = null;
+                    } catch (Exception e) {
+                        db.endTransaction();
                     }
-                    db.setTransactionSuccessful();
-                    db.endTransaction();
-                    mScreens = null;
-                } catch (Exception e) {
-                    db.endTransaction();
+                } else {
+                    StringBuilder stringBuilder = (new StringBuilder()).append("Invalid resorder request: ");
+                    Log.e(TAG, stringBuilder.append("null").toString());
+                    i = 0;
                 }
-                
             } else if ("favorites".equals(sqlArguments.table) 
                     && selection == null && values != null){
                 Long container = values.getAsLong("container");
                 Long screen = values.getAsLong("screen");
-                if ((container != null && -100L == container.longValue())
+                if ((container != null && LauncherSettings.Favorites.CONTAINER_DESKTOP == container.longValue())
                         && (screen != null && -1L == screen.longValue()))
                     ScreenUtils.fillEmptyCell(getContext(), db, loadScreens(db), values);
             }
@@ -271,13 +286,11 @@ public class LauncherProvider extends ContentProvider {
         
     }
     
-    private void sendNotify(Uri uri) {
-        String notify = uri.getQueryParameter(PARAMETER_NOTIFY);
-        if (notify == null || "true".equals(notify)) {
-            getContext().getContentResolver().notifyChange(uri, null);
-        }
-    }
-    
+    /**
+     * 描述： 从数据库中读取屏幕信息
+     * @param db
+     * @return
+     */
     private ArrayList<ScreenInfo> loadScreens(SQLiteDatabase db){
         if (mScreens == null){
             mScreens = ScreenUtils.loadScreens(db);
@@ -911,20 +924,23 @@ public class LauncherProvider extends ContentProvider {
                     long al[] = new long[j];
                     
                     contentValues = new ContentValues();
+                    // 根据获得的最大屏幕值来创建屏幕表的行数及屏幕排序
                     for (int i = 0; i < j; i++) {
                         contentValues.clear();
                         contentValues.put("screenOrder", Integer.valueOf(i));
                         al[i] = db.insert("screens", null, contentValues);
                     }
-                    /*   ***** 无效 ***
+                    
+                    // 将存储的项目的screen id 从0.1.2.3.....改为 1.2.3.4....排序，方便后续显示处理
                     j--;
-                    if (j >= 0) {
+                    while (j >= 0) {
                         contentValues.clear();
                         contentValues.put("screen", Long.valueOf(al[j]));
                         String selString[] = new String[]{String.valueOf(j)};
                         
-                        db.update("favorites", contentValues, "screen=?", selString);   
-                    }*/
+                        db.update("favorites", contentValues, "screen=?", selString);
+                        j--;
+                    }
                 }   
                 cursor.close();
             } catch (Exception e) {
@@ -974,7 +990,9 @@ public class LauncherProvider extends ContentProvider {
 
         @Override
         public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-            // TODO Auto-generated method stub
+            if (LOGD) {
+                Log.w(TAG, "onupgrade");
+            }
             
         }
         

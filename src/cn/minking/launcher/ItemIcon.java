@@ -31,7 +31,8 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.TextView;
 
-public abstract class ItemIcon extends FrameLayout{
+public abstract class ItemIcon extends FrameLayout
+    implements ApplicationsMessage.IconMessage{
     
     public static float DEFAULT_PRESET_APP_ALPHA = 0.5F;
     protected ImageView mIcon;
@@ -119,13 +120,15 @@ public abstract class ItemIcon extends FrameLayout{
             }
         }
     }
+    
     @SuppressWarnings("deprecation")
     private void setMessageTextBackground(String text){
         Drawable drawable = getRemoteResourceDrawable(text);
-        if (drawable == null)
+        if (drawable == null){
             mMessage.setBackgroundResource(R.drawable.icon_notification_bg);
-        else
+        } else {
             mMessage.setBackgroundDrawable(drawable);
+        }
     }
     
     public byte[] getMessageIconTile(){
@@ -134,10 +137,11 @@ public abstract class ItemIcon extends FrameLayout{
     
     public String getMessageText(){
         String message;
-        if (isEmptyMessage())
+        if (isEmptyMessage()) {
             message = null;
-        else
+        } else {
             message = mMessage.getText().toString();
+        }
         return message;
     }
 
@@ -152,10 +156,11 @@ public abstract class ItemIcon extends FrameLayout{
     public boolean isEmptyMessage(){
         boolean flag;
         if (mMessage.getText().length() != 0 
-                || mMessageBackground != null)
+                || mMessageBackground != null) {
             flag = false;
-        else
+        } else {
             flag = true;
+        }
         return flag;
     }
     
@@ -202,13 +207,15 @@ public abstract class ItemIcon extends FrameLayout{
         setupIconMargin(mIconContainer);
         int radioWidth = (int)((float)width / 1.5F);
         FrameLayout.LayoutParams layoutparams = (FrameLayout.LayoutParams)mMessage.getLayoutParams();
-        if (mMessage.getMeasuredWidth() > radioWidth)
+        if (mMessage.getMeasuredWidth() > radioWidth) {
             layoutparams.width = radioWidth;
-        if (!isCompact())
+        }
+        if (!isCompact()) {
             layoutparams.setMargins(0, 0, Math.max(0, (getMeasuredWidth() - width - mMessageWidth) / 2), 0);
-        else
+        } else {
             layoutparams.setMargins(0, Math.max(0, (getMeasuredHeight() - width - mMessageHeight) / 2),
                     Math.max(0, (getMeasuredWidth() - width - mMessageWidth) / 2), 0);
+        }
         mMessage.setLayoutParams(layoutparams);
     }
     

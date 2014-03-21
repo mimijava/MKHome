@@ -41,5 +41,9 @@
     <dimen name="scroll_zone">20.0dip</dimen>
     <dimen name="dragViewOffsetX">0.0dip</dimen>
     <dimen name="dragViewOffsetY">-8.0dip</dimen>
+    <dimen name="widget_left_padding">1.0dip</dimen>
+    <dimen name="widget_right_padding">1.0dip</dimen>
+    <dimen name="widget_top_padding">1.0dip</dimen>
+    <dimen name="widget_bottom_padding">1.0dip</dimen>
 </resources>
     

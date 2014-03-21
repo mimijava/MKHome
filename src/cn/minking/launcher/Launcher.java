@@ -9,39 +9,61 @@ package cn.minking.launcher;
  * 2014-02-18： 实现LauncherModel读取手机中的APP及WIDGET
  * ====================================================================================
  */
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.FileDescriptor;
+import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 
+import cn.minking.launcher.AllAppsList.RemoveInfo;
+import cn.minking.launcher.gadget.Gadget;
 import cn.minking.launcher.gadget.GadgetInfo;
 import cn.minking.launcher.upsidescene.SceneData;
+import cn.minking.launcher.upsidescene.SceneScreen;
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.app.Activity;
+import android.app.ProgressDialog;
 import android.app.WallpaperManager;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.PackageManager.NameNotFoundException;
+import android.content.res.Configuration;
+import android.content.res.Resources;
 import android.database.ContentObserver;
 import android.graphics.Point;
 import android.nfc.Tag;
 import android.os.Bundle;
 import android.os.Handler;
+import android.preference.PreferenceManager;
 import android.util.Log;
 import android.view.Display;
+import android.view.LayoutInflater;
 import android.view.Surface;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewRootImpl;
 import android.view.Window;
 import android.view.View.OnClickListener;
 import android.view.View.OnLongClickListener;
 import android.view.WindowManager;
+import android.view.WindowManagerGlobal;
 import android.view.animation.Animation;
 import android.view.animation.AnimationUtils;
 import android.view.animation.LinearInterpolator;
+import android.view.inputmethod.InputMethodManager;
+import android.widget.FrameLayout;
 import android.widget.Toast;
 
 public class Launcher extends Activity implements OnClickListener,
@@ -106,6 +128,9 @@ public class Launcher extends Activity implements OnClickListener,
     
     /******* 状态  ********/
     
+    // 桌面加载延时弹出框
+    private ProgressDialog mLoadingProgressDialog;
+    
     /// M: WORKSPACE是否处于装载
     private boolean mWorkspaceLoading;
     
@@ -120,7 +145,11 @@ public class Launcher extends Activity implements OnClickListener,
     private boolean mOnResumeNeedsLoad;
     private Bundle mSavedInstanceState;
     private Bundle mSavedState;
+    
+    private int mEditingState;
         
+    private boolean mSceneAnimating;
+    
     /// M: 跟踪用户是否离开Launcher的行为状态
     private static boolean sPausedFromUserAction = false;
     
@@ -144,6 +173,11 @@ public class Launcher extends Activity implements OnClickListener,
     private Animation mWidgetEditingEnter;
     private Animation mWidgetEditingExit;
     
+    private FolderCling mFolderCling;
+    private SceneScreen mSceneScreen;
+    private View mPositionSnap;
+    private SceneData mUpsideScene;
+    
     // 桌面背景
     private Background mDragLayerBackground;
     private Point mTmpPoint = new Point();
@@ -151,19 +185,27 @@ public class Launcher extends Activity implements OnClickListener,
     // 桌面缩略图
     private WorkspaceThumbnailView mWorkspacePreview;
     
+    private WidgetThumbnailView mWidgetThumbnailView;
+    
+    private GuidePopupWindow mEditingGuideWindow;
+    
+    private ErrorBar mErrorBar;
+    private DeleteZone mDeleteZone;
+    
     /// M: 静态变量标识本地信息是否变更
     private static boolean sLocaleChanged = false;
     
     /******* 数据 ********/
     private LauncherModel mModel;
     private LauncherAppWidgetHost mAppWidgetHost;
-    private static HashMap mFolders = new HashMap();
+    private static HashMap<Long, FolderInfo> mFolders = new HashMap<Long, FolderInfo>();
     private IconCache mIconCache;
     private ItemInfo mLastAddInfo;
     private ApplicationsMessage mApplicationsMessage;
     
     // 桌面内容
-    private ArrayList<ItemInfo> mDesktopItems = new ArrayList();
+    private ArrayList<ItemInfo> mDesktopItems = new ArrayList<ItemInfo>();
+    public ArrayList<Gadget> mGadgets;
 
     /******* 其他 ********/
     
@@ -184,6 +226,108 @@ public class Launcher extends Activity implements OnClickListener,
     
     public Launcher(){
         mWorkspaceLoading = true;
+        mPositionSnap = null;
+        mEditingState = 7;
+        mLoadingProgressDialog = null;
+    }
+    
+    private boolean acceptFilter() {
+        boolean flag;
+        if (((InputMethodManager)getSystemService("input_method")).isFullscreenMode()){
+            flag = false;
+        } else {
+            flag = true;
+        }
+        return flag;
+    }
+    
+    /**
+     * 功能： SIM卡的本地信息是否改变
+     * @return
+     */
+    private boolean checkForLocaleChange() {
+        boolean flag = true;
+        LocaleConfiguration localeconfiguration = new LocaleConfiguration();
+        readConfiguration(this, localeconfiguration);
+        Configuration configuration = getResources().getConfiguration();
+        String loc_loc = localeconfiguration.locale;
+        String con_loc = configuration.locale.toString();
+        int loc_mcc = localeconfiguration.mcc;
+        int loc_mnc = localeconfiguration.mnc;
+        int con_mcc = configuration.mcc;
+        int con_mnc = configuration.mnc;
+        boolean bChange;
+        if (con_loc.equals(loc_loc) 
+            && loc_mnc == loc_mcc 
+            && con_mnc == con_mcc){
+            bChange = false;
+        } else {
+            bChange = true;
+        }
+        
+        // 如果改变则把最新的信息写入到配置文件中
+        if (!bChange) {
+            flag = false;
+        } else {
+            localeconfiguration.locale = con_loc;
+            localeconfiguration.mcc = con_mcc;
+            localeconfiguration.mnc = con_mnc;
+            writeConfiguration(this, localeconfiguration);
+        }
+        return flag;
+    }
+    
+    /**
+     * 描述： 从文件中读取SIM卡的本地信息
+     * @param context
+     * @param localeconfiguration
+     */
+    private static void readConfiguration(Context context, LocaleConfiguration localeconfiguration) {
+        DataInputStream datainputstream = null;
+        try {
+            datainputstream = new DataInputStream(context.openFileInput("launcher.preferences"));
+            localeconfiguration.locale = datainputstream.readUTF();
+            localeconfiguration.mcc = datainputstream.readInt();
+            localeconfiguration.mnc = datainputstream.readInt();
+            
+            datainputstream.close();
+        } catch (IOException e) {
+            if (datainputstream != null) {
+                try {
+                    datainputstream.close();
+                } catch (IOException e1) {
+                    e1.printStackTrace();
+                }
+            }
+            e.printStackTrace();
+        }
+    }
+    
+    /**
+     * 描述： 将SIM卡的信息写入文件
+     * @param context
+     * @param localeconfiguration
+     */
+    private static void writeConfiguration(Context context, LocaleConfiguration localeconfiguration) {
+        DataOutputStream dataoutputstream = null;
+        try {
+            dataoutputstream = new DataOutputStream(context.openFileOutput("launcher.preferences", 0));
+            dataoutputstream.writeUTF(localeconfiguration.locale);
+            dataoutputstream.writeInt(localeconfiguration.mcc);
+            dataoutputstream.writeInt(localeconfiguration.mnc);
+            dataoutputstream.flush();
+            
+            dataoutputstream.close();
+        } catch (IOException e) {
+            if (dataoutputstream != null) {
+                try {
+                    dataoutputstream.close();
+                } catch (IOException e1) {
+                    e1.printStackTrace();
+                }
+            }
+            e.printStackTrace();
+        }
     }
     
     @Override
@@ -268,6 +412,9 @@ public class Launcher extends Activity implements OnClickListener,
         wallpaperManager.suggestDesiredDimensions(width * 2, height);
     }
     
+    /**
+     * 描述： 配置桌面用到的各类动画效果
+     */
     private void setupAnimations(){
         mDeleteZoneEditingEnter = AnimationUtils.loadAnimation(this, R.anim.deletezone_editing_enter);
         mDeleteZoneEditingExit = AnimationUtils.loadAnimation(this, R.anim.deletezone_editing_exit);
@@ -275,6 +422,7 @@ public class Launcher extends Activity implements OnClickListener,
         mHotseatEditingExit = AnimationUtils.loadAnimation(this, R.anim.hotseat_editing_exit);
         mWidgetEditingEnter = AnimationUtils.loadAnimation(this, R.anim.widget_editing_enter);
         mWidgetEditingExit = AnimationUtils.loadAnimation(this, R.anim.widget_editing_exit);
+        
         mDimAnim = new ValueAnimator();
         mDimAnim.setInterpolator(new LinearInterpolator());
         mDimAnim.setDuration(getResources().getInteger(R.integer.config_animDuration));
@@ -429,11 +577,106 @@ public class Launcher extends Activity implements OnClickListener,
         mHotSeats.setLauncher(this);
         mHotSeats.setDragController(dragController);
         
+        mFolderCling = (FolderCling)findViewById(R.id.folder_cling);
+        mFolderCling.setLauncher(this);
+        mFolderCling.setDragController(dragController);
+        
         setupAnimations();
+        mPositionSnap = mDragLayer.findViewById(R.id.default_position);
     }
 
+    private void showStatusBar(boolean flag) {
+        
+    }
+    
+    private void showEditPanel(boolean flag, boolean flag1) {
+        boolean showSBar;
+        boolean showDeletezone;
+        if (flag) {
+            showSBar = false;
+        } else {
+            showSBar = true;
+        }
+        showStatusBar(showSBar);
+        DeleteZone deletezone = mDeleteZone;
+        if (!flag){
+            deletezone.setVisibility(View.INVISIBLE);
+        } else {
+            deletezone.setVisibility(View.VISIBLE);
+        }
+        
+        Animation animation;
+        if (!flag){
+            animation = mDeleteZoneEditingExit;
+        } else {
+            animation = mDeleteZoneEditingEnter;
+        }
+        deletezone.startAnimation(animation);
+        if (!flag1) {
+            if (!flag) {
+                mDragLayerBackground.setExitEditingMode();
+            } else {
+                mDragLayerBackground.setEnterEditingMode();
+            }
+            HotSeats hotSeats = mHotSeats;
+            Animation animHotSeats;
+            if (!flag) {
+                animHotSeats = mHotseatEditingEnter;
+            } else {
+                animHotSeats = mHotseatEditingExit;
+            }
+            hotSeats.startAnimation(animHotSeats);
+            
+            if (!flag){
+                hotSeats.setVisibility(View.VISIBLE);
+            } else {
+                hotSeats.setVisibility(View.INVISIBLE);
+            }
+            
+            if (!flag){
+                mWidgetThumbnailView.startAnimation(mWidgetEditingExit);
+            } else{
+                mWidgetThumbnailView.startAnimation(mWidgetEditingEnter);
+            }
+            
+            if (flag){
+                mWidgetThumbnailView.setVisibility(View.VISIBLE);
+            }
+                
+            
+            if (!flag || mEditingGuideWindow == null) {
+                if (mEditingGuideWindow != null) {
+                    mEditingGuideWindow.dismiss();
+                    mEditingGuideWindow = null;
+                }
+            } else {
+                mEditingGuideWindow.show(mWidgetThumbnailView, 0, 0, true);
+                SharedPreferences.Editor editor = PreferenceManager.getDefaultSharedPreferences(this).edit();
+                editor.putBoolean("pref_key_guide_tips_editing_mode", false);
+                editor.commit();
+            }
+        }
+    }
+    
     public IconCache getIconCache(){
         return mIconCache;
+    }
+    
+    public Padding getPaddingForWidget(ComponentName componentname) {
+        Padding padding = new Padding();
+        PackageManager packageManager = getPackageManager();
+        try {
+            ApplicationInfo aInfo = packageManager.getApplicationInfo(componentname.getPackageName(), 0);
+            if (aInfo.targetSdkVersion >= 14) {
+                Resources resources = getResources();
+                padding.left = resources.getDimensionPixelSize(R.dimen.widget_left_padding);
+                padding.right = resources.getDimensionPixelSize(R.dimen.widget_right_padding);
+                padding.top = resources.getDimensionPixelSize(R.dimen.widget_top_padding);
+                padding.bottom = resources.getDimensionPixelSize(R.dimen.widget_bottom_padding);
+            }   
+        } catch (NameNotFoundException e) { }
+        
+        return padding;
     }
     
     int addAppWidget(LauncherAppWidgetProviderInfo launcherappwidgetproviderinfo){
@@ -442,6 +685,20 @@ public class Launcher extends Activity implements OnClickListener,
     
     public void bindAppMessage(ShortcutIcon shortcuticon, ComponentName componentname){
         mApplicationsMessage.addApplication(shortcuticon, componentname);
+    }
+    
+    DragController.TouchTranslator getTouchTranslator() {
+        CellScreen cellscreen;
+        if (mEditingState != 8) {
+            cellscreen = null;
+        } else { 
+            cellscreen = getWorkspace().getCurrentCellScreen();
+        }
+        return cellscreen;
+    }
+    
+    public SceneData getUpsideScene() {
+        return mUpsideScene;
     }
     
     public Workspace getWorkspace() {
@@ -463,6 +720,77 @@ public class Launcher extends Activity implements OnClickListener,
     public DragLayer getDragLayer(){
         return mDragLayer;
     }
+    
+    public int getEditingState() {
+        return mEditingState;
+    }
+    
+    private void completeAddShortcut(Intent intent) {
+        int cx = 0;
+        int cy = 0;
+        if (mLastAddInfo instanceof ShortcutProviderInfo) {
+            ShortcutProviderInfo sInfo = (ShortcutProviderInfo)mLastAddInfo;
+            cx = sInfo.cellX;
+            cy = sInfo.cellY;
+        }
+        mLastAddInfo = null;
+        CellLayout.CellInfo cellinfo = findSingleSlot(cx, cy, true);
+        if (cellinfo != null) {
+            CellLayout cellLayout = mWorkspace.getCurrentCellLayout();
+            ShortcutInfo shortcutinfo = mModel.addShortcut(this, intent, cellinfo);
+            if (shortcutinfo != null) {
+                ItemIcon itemIcon = createItemIcon(((ViewGroup)cellLayout), shortcutinfo);
+                mWorkspace.addInCurrentScreen(((View)itemIcon), 
+                        cellinfo.cellX, cellinfo.cellY, 1, 1, isWorkspaceLocked());
+            }
+        }
+    }
+    
+    /**
+     * 功能： 给ITEM找位置
+     * @param cx
+     * @param cy
+     * @param flag
+     * @return
+     */
+    private CellLayout.CellInfo findSingleSlot(int cx, int cy, boolean flag) {
+        return findSlot(cx, cy, 1, 1, flag);
+    }
+    
+    private CellLayout.CellInfo findSlot(int cx, int cy, int sx, int sy, boolean flag) {
+        return findSlot(-1L, cx, cy, sx, sy, flag);
+    }
+    
+    private CellLayout.CellInfo findSlot(long screen, 
+            int cx, int cy, int sx, int sy, boolean flag) {
+        CellLayout cellLayout;
+        CellLayout.CellInfo cInfo;
+        if (screen != -1L) {
+            cellLayout = mWorkspace.getCellLayout(mWorkspace.getScreenIndexById(screen));
+        } else {
+            cellLayout = mWorkspace.getCurrentCellLayout();
+        }
+        if (cellLayout != null) {
+            int ai[] = cellLayout.findNearestVacantAreaByCellPos(cx, cy, sx, sy, false);
+            if (ai != null) {
+                cInfo = new CellLayout.CellInfo();
+                cInfo.cellX = ai[0];
+                cInfo.cellY = ai[1];
+                cInfo.spanX = sx;
+                cInfo.spanY = sy;
+                cInfo.screenId = mWorkspace.getCurrentScreenId();
+            } else {
+                if (flag) {
+                    showError(R.string.out_of_space);
+                }
+                cInfo = null;
+            }
+        } else {
+            cInfo = null;
+        }
+        return cInfo;
+    }
+    
     private FolderIcon createFolderIcon(ViewGroup viewgroup, FolderInfo folderinfo){
         return FolderIcon.fromXml(R.layout.folder_icon, this, viewgroup, folderinfo);
     }
@@ -509,6 +837,15 @@ public class Launcher extends Activity implements OnClickListener,
         return itemIcon;
     }
     
+    public FolderIcon createNewFolder(long screen, int cx, int cy) {
+        FolderInfo folderinfo = new FolderInfo();
+        folderinfo.title = getText(R.string.folder_name);
+        LauncherModel.addItemToDatabase(this, folderinfo, 
+                LauncherSettings.Favorites.CONTAINER_DESKTOP, screen, cx, cy);
+        mFolders.put(Long.valueOf(folderinfo.id), folderinfo);
+        return (FolderIcon)createItemIcon(mWorkspace.getCurrentCellLayout(), folderinfo);
+    }
+    
     /**
      * 功能：  将各ITEM添加至相应的位置
      * @param iteminfo
@@ -549,15 +886,21 @@ public class Launcher extends Activity implements OnClickListener,
         addShortcut(shortcutinfo, false);
     }
 
-    void addShortcut(ShortcutInfo shortcutinfo, boolean flag){
-        if (getParentFolderIcon(shortcutinfo) == null){
-            //mWorkspace.addInScreen(createItemIcon(mWorkspace.getCurrentCellLayout(), shortcutinfo), shortcutinfo.screenId, shortcutinfo.cellX, shortcutinfo.cellY, 1, 1, flag);
+    /**
+     * 功能： 添加桌面快捷方式
+     * @param shortcutinfo
+     * @param flag
+     */
+    void addShortcut(ShortcutInfo shortcutInfo, boolean flag){
+        if (getParentFolderIcon(shortcutInfo) == null){
+            mWorkspace.addInScreen(createItemIcon(mWorkspace.getCurrentCellLayout(), shortcutInfo), 
+                    shortcutInfo.screenId, shortcutInfo.cellX, shortcutInfo.cellY, 1, 1, flag);
         } else {
-            FolderInfo folderinfo = getParentFolderInfo(shortcutinfo);
+            FolderInfo folderinfo = getParentFolderInfo(shortcutInfo);
             if (folderinfo == null || !(folderinfo instanceof FolderInfo)){
-                Log.e("Launcher", (new StringBuilder()).append("Can't find user folder of id ").append(shortcutinfo.container).toString());
+                Log.e("Launcher", (new StringBuilder()).append("Can't find user folder of id ").append(shortcutInfo.container).toString());
             } else {
-                folderinfo.add(shortcutinfo);
+                folderinfo.add(shortcutInfo);
                 folderinfo.notifyDataSetChanged();
                 mApplicationsMessage.updateFolderMessage(folderinfo);
             }
@@ -567,6 +910,20 @@ public class Launcher extends Activity implements OnClickListener,
     public boolean isWorkspaceLocked() {
         boolean flag;
         if (!mWorkspaceLoading && !mWaitingForResult){
+            flag = false;
+        } else {
+            flag = true;
+        }
+        return flag;
+    }
+    
+    public boolean isSceneAnimating() {
+        return mSceneAnimating;
+    }
+    
+    public boolean isSceneShowing() {
+        boolean flag;
+        if (mSceneScreen == null || !mSceneScreen.isShowing()) {
             flag = false;
         } else {
             flag = true;
@@ -589,9 +946,124 @@ public class Launcher extends Activity implements OnClickListener,
         }
     }
     
-    public boolean isInEditing(){
-        boolean flag = false;
+    private void showSceneScreenCore() {/*
+        if (mSceneScreen == null) {
+            mSceneScreen = (SceneScreen)LayoutInflater.from(this).inflate(R.layout.upside_scene_screen, null);
+            mSceneScreen.setLauncher(this);
+            mDragLayer.addView(mSceneScreen, mDragLayer.indexOfChild(mFolderCling), new FrameLayout.LayoutParams(-1, -1));
+            mSceneScreen.setSceneData(getUpsideScene());
+        }
+        mSceneScreen.onShowAnimationStart();
+        mSceneScreen.setTranslationY(-mScreen.getHeight());
+        mSceneScreen.post(new Runnable() {
+            @Override
+            public void run() {
+                Animator oAnimator = ObjectAnimator.ofFloat(mSceneScreen, "translationY", 0F);
+                oAnimator.addListener(new AnimatorListenerAdapter() {
+                    @Override
+                    public void onAnimationEnd(Animator animator) {
+                        mScreen.setVisibility(4);
+                        mSceneScreen.onShowAnimationEnd();
+                        mSceneAnimating = false;
+                        mSceneScreen.notifyGadgets(4);
+                        showUpsideEnterOrExitTipIfNeed(false);
+                    }
+                });
+                oAnimator.start();
+                goOutOldLayer();
+            }
+        });
+        */
+    }
+    
+    public void showSceneScreen() {
+        mSceneAnimating = true;
+        if (mSceneScreen != null) {
+            showSceneScreenCore();
+        } else {
+            showSceneScreenLoading();
+        }
+    }
+
+    public void showSceneScreenLoading() {
+        /*
+        mSceneScreenLoading = (ViewGroup)getLayoutInflater().inflate(R.layout.upside_loading, mDragLayer, false);
+        mDragLayer.addView(mSceneScreenLoading, mDragLayer.indexOfChild(mSceneScreen));
+        mSceneScreenLoading.setTranslationY(-mScreen.getHeight());
+        ViewGroup viewgroup = mSceneScreenLoading;
+        float af[] = new float[1];
+        af[0] = 0F;
+        ObjectAnimator objectanimator = ObjectAnimator.ofFloat(viewgroup, "translationY", af);
+        objectanimator.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animator) {
+                showSceneScreenCore();
+            }
+        });
+        objectanimator.start();
+        goOutOldLayer();
+        */
+    }
+    
+    public void removeGadget(ItemInfo iteminfo) {
+        if (iteminfo.itemType == 5) {
+            Gadget gadget1 = null;
+            Iterator iterator = mGadgets.iterator();
+            while (iterator.hasNext()){
+                Gadget gadget = (Gadget)iterator.next();
+                if (!((View)gadget).getTag().equals(iteminfo)){
+                    continue;
+                }
+                gadget1 = gadget;
+            }
+            if (gadget1 != null) {
+                mGadgets.remove(gadget1);
+                gadget1.onDestroy();
+                gadget1.onDeleted();
+            }
+        }
+    }
+    
+    public void scrollToDefault() {
+        mPositionSnap.setFocusableInTouchMode(true);
+        mPositionSnap.requestFocus();
+        mPositionSnap.setFocusableInTouchMode(false);
+    }
+    
+    public void hideSceneScreen() {
+        mSceneAnimating = true;
+        mScreen.setVisibility(View.VISIBLE);
+        mSceneScreen.onHideAnimationStart();
         
+        float af1[] = new float[]{-mSceneScreen.getHeight()};
+        Animator oAnimator = ObjectAnimator.ofFloat(mSceneScreen, "translationY", af1);
+        oAnimator.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animator) {
+                mSceneScreen.onHideAnimationEnd();
+                mSceneAnimating = false;
+                notifyGadgetStateChanged(4);
+            }
+
+        });
+        oAnimator.start();
+        ObjectAnimator.ofFloat(mScreen, "translationY", 0F).start();
+    }
+    /**
+     * 描述： 是否有文件处于打开状态
+     * @return
+     */
+    public boolean isFolderShowing() {
+        return mFolderCling.isOpened();
+    }
+    
+    public boolean isInEditing(){
+        boolean flag;
+        if (mEditingState == 7){
+            flag = false;
+        } else {
+            flag = true;
+        }
         return flag;
     }
     
@@ -602,12 +1074,20 @@ public class Launcher extends Activity implements OnClickListener,
         }
     }
     
+    public boolean isPreviewShowing() {
+        return mWorkspacePreview.isShowing();
+    }
+    
     @Override
     public void bindAppWidget(LauncherAppWidgetInfo launcherappwidgetinfo) {
         // TODO Auto-generated method stub
         
     }
 
+    /**
+     * 功能： 将读取的APP添加至屏幕中，绑定Cell screen及Layout
+     * 
+     */
     @Override
     public void bindAppsAdded(final ArrayList<ShortcutInfo> arraylist) {
         mWorkspace.post(new Runnable() {
@@ -624,15 +1104,22 @@ public class Launcher extends Activity implements OnClickListener,
     }
 
     @Override
-    public void bindAppsRemoved(ArrayList arraylist) {
-        // TODO Auto-generated method stub
+    public void bindAppsRemoved(ArrayList<RemoveInfo> arraylist) {
+        mDragController.cancelDrag();
+        mWorkspace.removeItems(arraylist);
+        mHotSeats.removeItems(arraylist);
         
+        RemoveInfo removeinfo;
+        for (Iterator<RemoveInfo> iterator = arraylist.iterator(); 
+                iterator.hasNext(); mApplicationsMessage.removeApplication(removeinfo.packageName)){
+            removeinfo = iterator.next();
+        }
     }
 
     @Override
-    public void bindFolders(HashMap hashmap) {
-        // TODO Auto-generated method stub
-        
+    public void bindFolders(HashMap<Long, FolderInfo> hashmap) {
+        mFolders.clear();
+        mFolders.putAll(hashmap);
     }
 
     @Override
@@ -702,8 +1189,28 @@ public class Launcher extends Activity implements OnClickListener,
 
     @Override
     public void finishLoading() {
-        // TODO Auto-generated method stub
-        
+        if (mLoadingProgressDialog != null) {
+            mLoadingProgressDialog.dismiss();
+            mLoadingProgressDialog = null;
+        }
+    }
+    
+    public LauncherAppWidgetHost getAppWidgetHost() {
+        return mAppWidgetHost;
+    }
+    
+    /**
+     * 描述： 得到当前打开的文件夹
+     * @return
+     */
+    public View getCurrentOpenedFolder() {
+        FolderCling foldercling;
+        if (!isFolderShowing()) {
+            foldercling = null;
+        } else {
+            foldercling = mFolderCling;
+        }
+        return foldercling;
     }
 
     @Override
@@ -728,10 +1235,78 @@ public class Launcher extends Activity implements OnClickListener,
         mHotSeats.startBinding();
     }
 
+    /**
+     * 功能： 开机装载条
+     */
     @Override
     public void startLoading() {
-        // TODO Auto-generated method stub
-        
+        mLoadingProgressDialog = ProgressDialog.show(this, "", getText(R.string.loading), true);
+        mLoadingProgressDialog.setCancelable(false);
+    }
+    
+    /**
+     * 描述： 打开文件夹
+     * @param folderinfo
+     * @param view
+     */
+    public void openFolder(FolderInfo folderinfo, View view) {
+        mFolderCling.bind(folderinfo);
+        mFolderCling.open();
+        mDimAnim.cancel();
+        float af[] = new float[]{1F, 0.3F};
+        mDimAnim.setFloatValues(af);
+        mDimAnim.start();
+    }
+    
+    boolean closeFolder() {
+        return closeFolder(true);
+    }
+
+    /**
+     * 描述： 关闭文件夹及过程动画
+     * @param bClose
+     * @return
+     */
+    boolean closeFolder(boolean bClose) {
+        boolean flag;
+        if (!mFolderCling.isOpened()) {
+            flag = false;
+        } else {
+            mFolderCling.close(bClose);
+            mDimAnim.cancel();
+            float ai[] = new float[]{0.3F, 1F};
+            mDimAnim.setFloatValues(ai);
+            mDimAnim.start();
+            flag = true;
+        }
+        return flag;
+    }
+    
+    public void removeAppWidget(LauncherAppWidgetInfo launcherappwidgetinfo) {
+        mDesktopItems.remove(launcherappwidgetinfo);
+        launcherappwidgetinfo.hostView = null;
+    }
+    
+    void removeFolder(FolderInfo folderinfo) {
+        mFolders.remove(Long.valueOf(folderinfo.id));
+    }
+    
+    void removeFolder(FolderIcon foldericon) {
+        ((ViewGroup)foldericon.getParent()).removeView(foldericon);
+        FolderInfo folderinfo = (FolderInfo)foldericon.getTag();
+        LauncherModel.deleteUserFolderContentsFromDatabase(this, folderinfo);
+        removeFolder(folderinfo);
+    }
+    
+    void preRemoveItem(View view) {
+        ViewGroup viewgroup = (ViewGroup)view.getParent();
+        if (viewgroup instanceof CellLayout) {
+            ((CellLayout)viewgroup).preRemoveView(view);
+        }
+    }
+    
+    public void updateFolderMessage(FolderInfo folderinfo) {
+        mApplicationsMessage.updateFolderMessage(folderinfo);
     }
 
     @Override
@@ -742,5 +1317,64 @@ public class Launcher extends Activity implements OnClickListener,
         for (int i = 0; i < sDumpLogs.size(); i++) {
             writer.println("  " + sDumpLogs.get(i));
         }
+    }
+    
+    private void notifyGadgetStateChanged(int i) {
+        
+    }
+    
+    public void setEditingState(int state)
+    {
+        boolean flag = true;
+        if (state != mEditingState 
+            && !mWorkspace.inEditingModeAnimating() 
+            && (mEditingState != 7)) {
+            switch (state) {
+            default:
+                break;
+
+            case 7: // '\007'
+                boolean flag1;
+                if (9 != mEditingState){
+                    flag1 = false;
+                } else {
+                    flag1 = true;
+                }
+                showEditPanel(false, flag1);
+                notifyGadgetStateChanged(7);
+                Workspace workspace = mWorkspace;
+                if (mEditingState != 9){ 
+                    flag = false;
+                }
+                workspace.setEditMode(state, flag);
+                break;
+
+            case 8: // '\b'
+                showEditPanel(flag, false);
+                notifyGadgetStateChanged(8);
+                mWorkspace.setEditMode(state, false);
+                mDragLayer.clearAllResizeFrames();
+                break;
+
+            case 9: // '\t'
+                showEditPanel(flag, flag);
+                mWorkspace.setEditMode(state, flag);
+                break;
+            }
+            mEditingState = state;
+            ErrorBar errorbar = mErrorBar;
+            int j;
+            if (state == 7){
+                j = getResources().getDimensionPixelSize(R.dimen.status_bar_height);
+            } else {
+                j = 0;
+            }
+            errorbar.setMargins(0, j, 0, 0);
+        }
+    }
+    
+    public void showError(int i) {
+        mErrorBar.showError(i);
+        mDeleteZone.onShowError();
     }
 }

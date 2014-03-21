@@ -7,6 +7,7 @@ package cn.minking.launcher;
  * 更新内容
  * ====================================================================================
  * 20140228: 
+ * 20140317: 屏幕布局onLayout
  * ====================================================================================
  */
 import java.security.InvalidParameterException;
@@ -171,7 +172,7 @@ public class ScreenView extends ViewGroup {
     /*
      * 滑动条 
      */
-    protected class SliderBar extends FrameLayout
+    protected class SlideBar extends FrameLayout
         implements Indicator{
 
         private Rect mPadding;
@@ -193,29 +194,41 @@ public class ScreenView extends ViewGroup {
             }
         }
         
+        @Override
+        protected boolean setFrame(int left, int right, int top, int bottom) {
+            boolean flag = super.setFrame(left, right, top, bottom);
+            if (mSlidePoint != null) {
+                mPos.bottom = bottom - top - mPadding.bottom;
+                mPos.top = mPos.bottom - mSlidePoint.getHeight();
+            }
+            return flag;
+        }
+
         public int getSlideWidth() {
             return getMeasuredWidth() - mPadding.left - mPadding.right;
         }
         
-        public void setPosition(int i, int j) {
-            mPos.left = i + mPadding.left;
-            mPos.right = j + mPadding.left;
+        public void setPosition(int left, int right) {
+            mPos.left = left + mPadding.left;
+            mPos.right = right + mPadding.left;
         }
         
-        public SliderBar(Context context) {
+        public SlideBar(Context context) {
             super(context);
             mPos = new Rect();
             mPadding = new Rect();
             
             // 从资源中获得滑动条图片
-            mSlidePointBmp = BitmapFactory.decodeResource(context.getResources(), R.drawable.screen_view_slide_bar);
+            mSlidePointBmp = BitmapFactory.decodeResource(context.getResources(), 
+                    R.drawable.screen_view_slide_bar);
             if (mSlidePointBmp != null) {
                 byte abyte[] = mSlidePointBmp.getNinePatchChunk();
                 if (abyte != null) {
                     mSlidePoint = new NinePatch(mSlidePointBmp, abyte, null);
                     FrameLayout frameLayout = new FrameLayout(mContext);
                     frameLayout.setBackgroundResource(R.drawable.screen_view_slide_bar_bg);
-                    addView(frameLayout, new FrameLayout.LayoutParams(-1, -2, 80));
+                    addView(frameLayout, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, 
+                            FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM));
                     mPadding.left = frameLayout.getPaddingLeft();
                     mPadding.top = frameLayout.getPaddingTop();
                     mPadding.right = frameLayout.getPaddingRight();
@@ -452,7 +465,15 @@ public class ScreenView extends ViewGroup {
     public static final int SCREEN_TRANSITION_TYPE_STACK = 7;
     public static final int SCREEN_TRANSITION_TYPE_ROTATE = 8;
     public static final int SCREEN_TRANSITION_TYPE_CUSTOM = 9;
-    protected static final LinearLayout.LayoutParams SEEK_POINT_LAYOUT_PARAMS = new LinearLayout.LayoutParams(-1, -1, 1F);
+    
+    /*********** 内容  *********/
+    // 指示器
+    protected static final LinearLayout.LayoutParams SEEK_POINT_LAYOUT_PARAMS = 
+            new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT, 1F);
+    protected SeekBarIndicator mScreenSeekBar;
+    private int mSeekPointResId = R.drawable.screen_view_seek_point_selector;
+    private int mIndicatorCount = 0;
+    
     private static final float SMOOTHING_CONSTANT = (float)(0.016D / Math.log(0.75D));
     private static final float SMOOTHING_SPEED = 0.75F;
     private static final int SNAP_VELOCITY = 300;
@@ -468,11 +489,10 @@ public class ScreenView extends ViewGroup {
     private boolean mCurrentGestureFinished = false;
     protected int mCurrentScreen = INVALID_SCREEN;
     protected int mNextScreen = INVALID_SCREEN;
-    protected SeekBarIndicator mScreenSeekBar;
-    private int mSeekPointResId = R.drawable.screen_view_seek_point_selector;
+    
     private Context mContext = null;
     private int mScreenCounter = 0;
-    private int mIndicatorCount = 0;
+    
     private int mTouchState = TOUCH_STATE_REST;
     protected Scroller mScroller = null;
     private int mRight = 0;
@@ -483,14 +503,14 @@ public class ScreenView extends ViewGroup {
     private ScaleGestureDetector mScaleGestureDetector = null; // 缩放手势检测
     GestureVelocityTracker mGestureVelocityTracker = null;
     private int mMaximumVelocity = 0;
-    private int mScrollX = 0;
-    private int mScrollY = 0;
+    protected int mScrollX = 0;
+    protected int mScrollY = 0;
     private float mTouchX = 0.0F;
     private int mScreenTransitionType = SCREEN_TRANSITION_TYPE_CLASSIC_NO_OVER_SHOOT;
-    protected int mVisibleRange = 0;
+    protected int mVisibleRange = 1;
     private Camera mCamera = null;
     protected int mChildScreenWidth = 0;
-    protected SliderBar mSliderBar = null;
+    protected SlideBar mSlideBar = null;
     private float mSmoothingTime = 0.0F;
     protected int mActivePointerId = INVALID_POINTER;
     private boolean mAllowLongPress = true;
@@ -538,50 +558,32 @@ public class ScreenView extends ViewGroup {
         initScreenView();
     }
 
-    /*
-     * 布局显示
+    /**
+     * 功能： 布局显示
      * @see android.view.ViewGroup#onLayout(boolean, int, int, int, int)
      */
     @Override
-    protected void onLayout(boolean changed, int i, int j, int k, int l) {
+    protected void onLayout(boolean changed, int left, int right, int top, int bottom) {
+        this.setFrame(left, right, top, bottom);
+        
         updateIndicatorPositions(mScrollX);
         int width = 0;
         
         for (int screenId = 0; screenId < getScreenCount(); screenId++) {
             View view = getChildAt(screenId);
             if (view.getVisibility() != View.GONE) {
-                view.layout(width, mPaddingTop + mScreenPaddingTop, width + view.getMeasuredWidth(), mPaddingTop + mScreenPaddingTop + view.getMeasuredHeight());
+                view.layout(width, mPaddingTop + mScreenPaddingTop, 
+                        width + view.getMeasuredWidth(), 
+                        mPaddingTop + mScreenPaddingTop + view.getMeasuredHeight());
                 width += view.getMeasuredWidth();
             }
         }
         if (mScrollWholeScreen && ((mCurrentScreen % mVisibleRange) > 0)) {
             setCurrentScreen(mCurrentScreen - (mCurrentScreen % mVisibleRange));
         }
-        /*
-        int tmp = i + mPaddingLeft;
-        int tmp1 = k - mPaddingRight;
-        int k1 = getScreenCount();
-        int i1 = 0;
-        int j1 = 0;
-        do {
-            if (j1 > k1) {
-                if (mScrollWholeScreen && ((mCurrentScreen % mVisibleRange) > 0)) {
-                    setCurrentScreen(mCurrentScreen - (mCurrentScreen % mVisibleRange));
-                }
-                return;
-            }
-            View view = getChildAt(j1);
-            if (view.getVisibility() != View.GONE) {
-                view.layout(i1, mPaddingTop + mScreenPaddingTop, i1 + view.getMeasuredWidth(),
-                        mPaddingTop + mScreenPaddingTop + view.getMeasuredHeight());
-                i1 += view.getMeasuredWidth();
-            }
-            j1++;
-        } while (true);
-        */
     }
     
-    /*
+    /**
      * 获得个屏幕上每个字控件的所占用的空间大小
      */
     
@@ -591,52 +593,59 @@ public class ScreenView extends ViewGroup {
         mHeightMeasureSpec = heightMeasureSpec;
         int iHeight = 0;
         int iWidth = 0;
+        int screeenCount = getScreenCount();
         
-        for (int idCount = 0; idCount < mIndicatorCount; idCount++) {
-            int screenWidth = 0;
-            int screenHeight = 0;
-            // 子控件的VIEW
-            View view = getChildAt(idCount + getScreenCount());
-            if (view != null) {
-                // 子控件的布局LAYOUT
-                LayoutParams layoutParams = view.getLayoutParams();
-                view.measure(getChildMeasureSpec(widthMeasureSpec, mPaddingLeft + mPaddingRight, layoutParams.width), 
-                        getChildMeasureSpec(heightMeasureSpec, (mPaddingTop + mScreenPaddingTop + mPaddingBottom + mScreenPaddingBottom), layoutParams.height));
-                // 子控件的宽度及高度
-                iHeight = Math.max(iHeight, view.getMeasuredHeight());
-                iWidth = Math.max(iWidth, view.getMeasuredWidth());
-                for (int screenCount = 0; screenCount < getScreenCount(); screenCount++) {
-                    View view1 = getChildAt(screenCount);
-                    LayoutParams layoutParams1 = view1.getLayoutParams();
-                    view1.measure(getChildMeasureSpec(widthMeasureSpec, mPaddingLeft + mPaddingRight, layoutParams1.width),
-                            getChildMeasureSpec(heightMeasureSpec, (mPaddingTop + mScreenPaddingTop + mPaddingBottom + mScreenPaddingBottom), layoutParams1.height));
-                    screenWidth = Math.max(screenWidth, view1.getMeasuredWidth());
-                    screenHeight = Math.max(screenHeight, view1.getMeasuredHeight());
-                }
-                iWidth = Math.max(screenWidth, iWidth);
-                iHeight = Math.max(screenHeight, iHeight);
-                iWidth += (mPaddingLeft + mPaddingRight);
-                iHeight += (mPaddingTop + mScreenPaddingTop + mPaddingBottom + mScreenPaddingBottom);
-                setMeasuredDimension(resolveSize(iWidth, widthMeasureSpec), resolveSize(iHeight, heightMeasureSpec));
-                if (getScreenCount() > 0) {
-                    mChildScreenWidth = 1;
-                    mScreenWidth = MeasureSpec.getSize(widthMeasureSpec) - mPaddingLeft - mPaddingRight;
-                    updateScreenOffset();
-                    setOverScrollRatio(mOverScrollRatio);
-                    if (mChildScreenWidth > 0) {
-                        mVisibleRange = Math.max(1, (mScreenWidth + mChildScreenWidth / 2) / mChildScreenWidth);
-                    }
-                }
-                if (mFirstLayout && mVisibleRange > 0) {
-                    mFirstLayout = false;
-                    setHorizontalScrollBarEnabled(false);
-                    setCurrentScreen(mCurrentScreen);
-                    setHorizontalScrollBarEnabled(true);
-                }
-            }
+        for (int i = 0; i < mIndicatorCount; i++) {
+            View view = getChildAt(i + getScreenCount());
+            ViewGroup.LayoutParams lParams = view.getLayoutParams();
+            view.measure(
+                    getChildMeasureSpec(mWidthMeasureSpec, 
+                        mPaddingLeft + mPaddingRight, lParams.width), 
+                    getChildMeasureSpec(mHeightMeasureSpec, 
+                        mPaddingTop + mScreenPaddingTop + mPaddingBottom + mScreenPaddingBottom, 
+                        lParams.height));
+            iWidth = Math.max(iWidth, view.getMeasuredWidth());
+            iHeight = Math.max(iHeight, view.getMeasuredHeight());
         }
         
-        super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+        int mWidth = 0;
+        int mHeight = 0;
+        
+        for (int i = 0; i < screeenCount; i++) {
+            View view = getChildAt(i);
+            ViewGroup.LayoutParams lParams = view.getLayoutParams();
+            view.measure(
+                    getChildMeasureSpec(mWidthMeasureSpec, 
+                            mPaddingLeft + mPaddingRight, lParams.width), 
+                    getChildMeasureSpec(mHeightMeasureSpec, 
+                            mPaddingTop + mScreenPaddingTop + mPaddingBottom + mScreenPaddingBottom, 
+                            lParams.height));
+            mWidth = Math.max(mWidth, view.getMeasuredWidth());
+            mHeight = Math.max(mHeight, view.getMeasuredHeight());
+        }
+        
+        iWidth = Math.max(mWidth, iWidth);
+        iHeight = Math.max(mHeight, iHeight);
+        
+        iWidth += mPaddingLeft + mPaddingRight;
+        iHeight += mPaddingTop + mScreenPaddingTop + mPaddingBottom + mScreenPaddingBottom;
+        setMeasuredDimension(resolveSize(iWidth, mWidthMeasureSpec), 
+                resolveSize(iHeight, mHeightMeasureSpec));
+        if (screeenCount > 0) {
+            mChildScreenWidth = mWidth;
+            mScreenWidth = View.MeasureSpec.getSize(mWidthMeasureSpec) - mPaddingLeft - mPaddingRight;
+            updateScreenOffset();
+            setOverScrollRatio(mOverScrollRatio);
+            if (mChildScreenWidth > 0){
+                mVisibleRange = Math.max(1, (mScreenWidth + mChildScreenWidth / 2) / mChildScreenWidth);
+            }
+        }
+        if (mFirstLayout && mVisibleRange > 0) {
+            mFirstLayout = false;
+            setHorizontalScrollBarEnabled(false);
+            setCurrentScreen(mCurrentScreen);
+            setHorizontalScrollBarEnabled(true);
+        }
     }
     
     public void onPause() {
@@ -777,40 +786,66 @@ public class ScreenView extends ViewGroup {
         return true;
     }
 
+    /**
+     * 功能： 移除所有屏幕
+     */
     public void removeAllScreens() {
         removeScreensInLayout(0, getScreenCount());
         requestLayout();
         invalidate();
     }
     
+    /**
+     * 删除所有的屏幕
+     */
+    @Override
     public void removeAllViewsInLayout() {
         mIndicatorCount = 0;
         mScreenCounter = 0;
-        //removeAllViewsInLayout();
+        if (mScreenSeekBar != null) {
+            mScreenSeekBar.removeAllViewsInLayout();
+        }
+        super.removeAllViewsInLayout();
     }
     
-    public void removeScreensInLayout(int i, int screenCount) {
-        if (i >= 0 && i < getScreenCount()) {
-            int k = Math.min(screenCount, getScreenCount() - i);
+    /**
+     * 描述： 从现有的布局中删除掉一些View
+     * @param start
+     * @param count
+     */
+    public void removeScreensInLayout(int start, int count) {
+        if (start >= 0 && start < getScreenCount()) {
+            
+            // 
+            int k = Math.min(count, getScreenCount() - start);
             if (mScreenSeekBar != null) {
-                mScreenSeekBar.removeViewsInLayout(i, k);
+                mScreenSeekBar.removeViewsInLayout(start, k);
             }
-            mScreenCounter = 0;
-            removeViewsInLayout(i, k);
+            
+            // 最后剩余的屏幕数
+            mScreenCounter = getScreenCount() - k;
+            super.removeViewsInLayout(start, k);
         }
     }
-
+    
+    /**
+     * 描述： 删除指定的屏幕
+     * @param screen_id
+     */
     public void removeScreen(int screen_id) {
         if (screen_id < getScreenCount()) {
+            // 如果删除的屏幕为当前的显示的屏幕
             if (screen_id == mCurrentScreen) {
                 if (mScrollWholeScreen) {
                     if ((screen_id != 0) && (screen_id == getScreenCount() - 1)) {
                         snapToScreen(screen_id - 1);
-                    }else {
-                        setCurrentScreen(Math.max(0, screen_id - 1));
                     }
+                } else {
+                    setCurrentScreen(Math.max(0, screen_id - 1));
                 }
             }
+            
+            // 删除指示器
             if (mScreenSeekBar != null) {
                 mScreenSeekBar.removeViewAt(screen_id);
             }
@@ -822,32 +857,6 @@ public class ScreenView extends ViewGroup {
         }
     }
     
-    
-    @Override
-    public void removeView(View view) {
-        throw new UnsupportedOperationException("ScreenView doesn't support remove view directly.");
-    }
-
-    @Override
-    public void removeViewAt(int index) {
-        throw new UnsupportedOperationException("ScreenView doesn't support remove view directly.");
-    }
-
-    @Override
-    public void removeViewInLayout(View view) {
-        throw new UnsupportedOperationException("ScreenView doesn't support remove view directly.");
-    }
-
-    @Override
-    public void removeViews(int start, int count) {
-        throw new UnsupportedOperationException("ScreenView doesn't support remove view directly.");
-    }
-
-    @Override
-    public void removeViewsInLayout(int start, int count) {
-        throw new UnsupportedOperationException("ScreenView doesn't support remove view directly.");
-    }
-
     public boolean requestChildRectangleOnScreen(View view, Rect rect, boolean b_flag) {
         boolean bFlag = false;
         if (indexOfChild(view) >= getScreenCount()) {
@@ -863,6 +872,90 @@ public class ScreenView extends ViewGroup {
         return bFlag;
     }
     
+    /**
+     * 功能： 添加指示器
+     * @param view
+     * @param layoutParams
+     */
+    public void addIndicator(View view, FrameLayout.LayoutParams layoutParams){
+        mIndicatorCount = mIndicatorCount + 1;
+        super.addView(view, -1, layoutParams);
+    }
+    
+    /**
+     * 功能： 指定位置添加指示器
+     * @param view
+     * @param layoutParams
+     */
+    public void addIndicatorAt(View view, FrameLayout.LayoutParams layoutParams, int pos) {
+        int j = Math.max(-1, Math.min(pos, mIndicatorCount));
+        if (j >= 0) {
+            j += getScreenCount();
+        }
+        mIndicatorCount = mIndicatorCount + 1;
+        super.addView(view, j, layoutParams);
+    }
+    
+    /**
+     * 描述： 删除指示器
+     * @param view
+     */
+    public void removeIndicator(View view){
+        int i = indexOfChild(view);
+        if (i >= getScreenCount()) {
+            mIndicatorCount = mIndicatorCount - 1;
+            super.removeViewAt(i);
+            return;
+        }else {
+            throw new InvalidParameterException("The view passed through the parameter must be indicator.");
+        }
+    }
+    
+    
+    /**
+     * 功能： 给指示器分配布局
+     * @param layoutParams
+     */
+    public void setSeekBarPosition(FrameLayout.LayoutParams layoutParams){
+        if (layoutParams == null) {
+            // 如果分配的布局为空， 则删除指示器
+            if (mScreenSeekBar != null) {
+                removeIndicator(mScreenSeekBar);
+                mScreenSeekBar = null;
+            }
+        } else { 
+            if (mScreenSeekBar != null) {
+                mScreenSeekBar.setLayoutParams(layoutParams);
+            }else {
+                mScreenSeekBar = new SeekBarIndicator(mContext);
+                mScreenSeekBar.setGravity(Gravity.CENTER_VERTICAL);
+                mScreenSeekBar.setAnimationCacheEnabled(false);
+                addIndicator(mScreenSeekBar, layoutParams);
+            }
+        }
+    }
+    
+    /**
+     * 描述： 更新指示器选择
+     * @param cur_screen
+     * @param next_screen
+     */
+    public void updateSeekPoints(int cur_screen, int next_screen) {
+        if (mScreenSeekBar == null) return;
+        int screenCount = getScreenCount();
+        
+        for (int i = 0; ((i < mVisibleRange) && ((cur_screen + i) < screenCount)); i++) {
+            mScreenSeekBar.getChildAt(cur_screen + i).setSelected(false);
+        }
+        
+        for (int m = 0; ((m < mVisibleRange) && ((next_screen + m) < screenCount)); m++) {
+            mScreenSeekBar.getChildAt(next_screen + m).setSelected(true);
+        }
+    }
+    /**
+     * 功能： 创建指示器图
+     * @return
+     */
     private ImageView createSeekPoint() {
         ImageView imageView = new ImageView(mContext);
         imageView.setScaleType(ScaleType.CENTER);
@@ -870,8 +963,27 @@ public class ScreenView extends ViewGroup {
         return imageView;
     }
     
-    /*
-     * 初始化
+    /**
+     * 描述： 显示指示器
+     * @param b_visibility
+     */
+    public void setSeekBarVisibility(int b_visibility) {
+        if (mScreenSeekBar != null) {
+            mScreenSeekBar.setVisibility(b_visibility);
+        }
+    }
+    
+    /**
+     * 描述： 指示器使用资源
+     * @param res_id
+     */
+    public void setSeekPointResource(int res_id) {
+        mSeekPointResId = res_id;
+    }
+    
+    
+    /**
+     * 功能： 初始化
      */
     private void initScreenView(){
         // 使用DRAWING CACHE来显示VIEW上所有控件，在拖动时也能显示
@@ -905,9 +1017,11 @@ public class ScreenView extends ViewGroup {
     private void refreshScrollBound(){
         mScrollLeftBound = (int)((float)(-mChildScreenWidth) * mOverScrollRatio) - mScrollOffset;
         if (mScrollWholeScreen) {
-            mScrollRightBound = (int)((float)(((getScreenCount() - 1) / mVisibleRange) * mScreenWidth) + (float)mChildScreenWidth * mOverScrollRatio);
+            mScrollRightBound = (int)((float)(((getScreenCount() - 1) / mVisibleRange) * mScreenWidth) 
+                    + (float)mChildScreenWidth * mOverScrollRatio);
         }else {
-            mScrollRightBound = (int)((float)mChildScreenWidth * ((float)getScreenCount() + mOverScrollRatio) - (float)mScreenWidth) + mScrollOffset;
+            mScrollRightBound = (int)((float)mChildScreenWidth * ((float)getScreenCount() + mOverScrollRatio) 
+                    - (float)mScreenWidth) + mScrollOffset;
         }
     }
     
@@ -977,59 +1091,59 @@ public class ScreenView extends ViewGroup {
     }
     
     private void updateIndicatorPositions(int pos){
-        if (getWidth() > 0) {
-            int screenCount = getScreenCount();
-            int width = getWidth();
-            int height = getHeight();
-            
-            for (int j = 0; j < mIndicatorCount; j++) {
-                View view = getChildAt(j + screenCount);
-                if (view != null) {
-                    FrameLayout.LayoutParams layoutParams = (FrameLayout.LayoutParams)view.getLayoutParams();
-                    int measureWidth = view.getMeasuredHeight();
-                    int measureHeight = view.getMeasuredHeight();
-                    int gravity = layoutParams.gravity;
-                    int childLeft = 0;
-                    int childTop = 0;
-                    if (gravity != -1) {
-                        switch (gravity & Gravity.HORIZONTAL_GRAVITY_MASK) {
-                        case Gravity.LEFT:
-                            childLeft = layoutParams.leftMargin;
-                            break;
-                        case Gravity.RIGHT:
-                            childLeft = width - measureHeight - layoutParams.rightMargin;
-                            break;
-                            
-                        case Gravity.CENTER_HORIZONTAL:
-                            childLeft = ((width - measureWidth) / 2) + layoutParams.leftMargin - layoutParams.rightMargin;
-                            break;
+        if (getWidth() <= 0) return;
+        
+        int width = getWidth();
+        int height = getHeight();
+        
+        for (int i = 0; i < mIndicatorCount; i++) {
+            View view = getChildAt(i + getScreenCount());
+            if (view != null && (view instanceof SeekBarIndicator)) {
+                FrameLayout.LayoutParams layoutParams = (FrameLayout.LayoutParams)view.getLayoutParams();
+                int measureWidth = view.getMeasuredHeight();
+                int measureHeight = view.getMeasuredHeight();
+                int gravity = layoutParams.gravity;
+                int childLeft = 0;
+                int childTop = 0;
+                if (gravity != -1) {
+                    switch (gravity & Gravity.HORIZONTAL_GRAVITY_MASK) {
+                    case Gravity.LEFT:
+                        childLeft = layoutParams.leftMargin;
+                        break;
+                    case Gravity.RIGHT:
+                        childLeft = width - measureHeight - layoutParams.rightMargin;
+                        break;
+                        
+                    case Gravity.CENTER_HORIZONTAL:
+                        childLeft = ((width - measureWidth) / 2) + layoutParams.leftMargin - layoutParams.rightMargin;
+                        break;
 
-                        case Gravity.AXIS_PULL_BEFORE:
-                        case Gravity.AXIS_PULL_AFTER:
-                        default:
-                            childLeft = layoutParams.leftMargin;
-                            break;
-                        }
-                        switch (gravity & Gravity.VERTICAL_GRAVITY_MASK) {
-                        case Gravity.CENTER:
-                            childTop = ((height - measureHeight) / 2) + layoutParams.topMargin - layoutParams.bottomMargin;
-                            break;
-                        case Gravity.TOP:
-                            childTop = layoutParams.topMargin;
-                            break;
-                        case Gravity.BOTTOM:
-                            childTop = height - measureHeight - layoutParams.bottomMargin;
-                            break;
-                        default:
-                            childTop = layoutParams.topMargin;
-                            break;
-                        }
+                    case Gravity.AXIS_PULL_BEFORE:
+                    case Gravity.AXIS_PULL_AFTER:
+                    default:
+                        childLeft = layoutParams.leftMargin;
+                        break;
                     }
-                    if ((view.isLayoutRequested() || view.getHeight() <= 0 || view.getWidth() <= 0) && !isFromcomputeScroll) {
-                        view.layout(pos + childLeft, childTop, pos + childLeft + measureWidth, childTop + measureHeight);
-                    }else {
-                        ((Indicator)view).fastOffset(pos + childLeft);
+                    switch (gravity & Gravity.VERTICAL_GRAVITY_MASK) {
+                    case Gravity.CENTER:
+                        childTop = ((height - measureHeight) / 2) + layoutParams.topMargin - layoutParams.bottomMargin;
+                        break;
+                    case Gravity.TOP:
+                        childTop = layoutParams.topMargin;
+                        break;
+                    case Gravity.BOTTOM:
+                        childTop = height - measureHeight - layoutParams.bottomMargin;
+                        break;
+                    default:
+                        childTop = layoutParams.topMargin;
+                        break;
                     }
+                }
+                if ((view.isLayoutRequested() || view.getHeight() <= 0 || view.getWidth() <= 0) 
+                        && !isFromcomputeScroll) {
+                    view.layout(pos + childLeft, childTop, pos + childLeft + measureWidth, childTop + measureHeight);
+                }else {
+                    ((Indicator)view).fastOffset(pos + childLeft);
                 }
             }
         }
@@ -1053,42 +1167,10 @@ public class ScreenView extends ViewGroup {
         mScrollOffset = mScrollOffset + mPaddingLeft;
     }
     
-    public void updateSeekPoints(int cur_screen, int next_screen) {
-        if (mScreenSeekBar != null) {
-            int screenCount = getScreenCount();
-            // int iRang = 0;
-            
-            for (int i = 0; ((i < mVisibleRange) && ((cur_screen + i) < screenCount)); i++) {
-                mScreenSeekBar.getChildAt(cur_screen + i).setSelected(false);
-            }
-            
-            for (int m = 0; ((m < mVisibleRange) && ((next_screen + m) < screenCount)); m++) {
-                mScreenSeekBar.getChildAt(next_screen + m).setSelected(true);
-            }
-            /*do {
-                if ((iRang < mVisibleRange) && ((cur_screen + iRang) < screenCount)) {
-                    mScreenSeekBar.getChildAt(cur_screen + iRang).setSelected(false);
-                    iRang++;
-                }else {
-                    iRang = 0;
-                    do {
-                        if ((iRang < mVisibleRange) && ((next_screen + iRang) < screenCount)) {
-                            mScreenSeekBar.getChildAt(next_screen + iRang).setSelected(true);
-                            iRang++;
-                        }else {
-                            return;
-                        }
-                    } while (true);
-                }   
-            } while (true);
-            */
-        }
-    }
-    
     private void updateSlidePointPosition(int pos) {
         int screenCount = getScreenCount();
-        if (mSliderBar != null && screenCount > 0) {
-            int slideWidth = mSliderBar.getSlideWidth();
+        if (mSlideBar != null && screenCount > 0) {
+            int slideWidth = mSlideBar.getSlideWidth();
             int range = Math.max((slideWidth / screenCount) * mVisibleRange, MINIMAL_SLIDE_BAR_POINT_WIDTH);
             screenCount *= mChildScreenWidth;
             if (screenCount > slideWidth) {
@@ -1096,9 +1178,9 @@ public class ScreenView extends ViewGroup {
             }else {
                 slideWidth = 0;
             }
-            mSliderBar.setPosition(slideWidth, slideWidth + range);
+            mSlideBar.setPosition(slideWidth, slideWidth + range);
             if (isHardwareAccelerated()) {
-                mSliderBar.invalidate();
+                mSlideBar.invalidate();
             }
         }
     }
@@ -1115,7 +1197,7 @@ public class ScreenView extends ViewGroup {
 
     protected void finishCurrentGesture() {
         mCurrentGestureFinished = true;
-        setTouchState(null, 0);
+        setTouchState(null, TOUCH_STATE_REST);
     }
 
     /*
@@ -1226,6 +1308,10 @@ public class ScreenView extends ViewGroup {
         }
         
         return bFlag;
+    }
+    
+    protected boolean getChildStaticTransformationByScreen(View view, Transformation transformation, float f) {
+        return false;
     }
 
     /*
@@ -1470,37 +1556,27 @@ public class ScreenView extends ViewGroup {
         return bFlag;
     }
 
-    public void setSeekBarVisibility(int b_visibility) {
-        if (mScreenSeekBar != null) {
-            mScreenSeekBar.setVisibility(b_visibility);
-        }
-    }
-    
-    public void setSeekPointResource(int res_id) {
-        mSeekPointResId = res_id;
-    }
-    
     public void setSlideBarPosition(FrameLayout.LayoutParams layoutParams) {
         if (layoutParams == null) {
-            if (mSliderBar != null) {
-                removeIndicator(mSliderBar);
-                mSliderBar = null;
+            if (mSlideBar != null) {
+                removeIndicator(mSlideBar);
+                mSlideBar = null;
             }
         }else {
-            if (mSliderBar != null) {
-                mSliderBar.setLayoutParams(layoutParams);
+            if (mSlideBar != null) {
+                mSlideBar.setLayoutParams(layoutParams);
             }else {
-                mSliderBar = new SliderBar(mContext);
-                mSliderBar.setOnTouchListener(new SliderTouchListener());
-                mSliderBar.setAnimationCacheEnabled(false);
-                addIndicator(mSliderBar, layoutParams);
+                mSlideBar = new SlideBar(mContext);
+                mSlideBar.setOnTouchListener(new SliderTouchListener());
+                mSlideBar.setAnimationCacheEnabled(false);
+                addIndicator(mSlideBar, layoutParams);
             }
         }
     }
     
     public void setSlideBarVisibility(int visibility) {
-        if (mSliderBar != null) {
-            mSliderBar.setVisibility(visibility);
+        if (mSlideBar != null) {
+            mSlideBar.setVisibility(visibility);
         }
     }
     
@@ -1509,13 +1585,6 @@ public class ScreenView extends ViewGroup {
         for (int i = 0; i < getScreenCount(); i++) {
             getChildAt(i).setOnLongClickListener(onLongClickListener);
         }
-        /*int i = getScreenCount();
-        int j = 0;
-        do {
-            if (j >= i) return;
-            getChildAt(j).setOnLongClickListener(onLongClickListener);
-            j++;
-        } while (true);*/
     }
     
     public void setOverScrollRatio(float ratio) {
@@ -1635,22 +1704,8 @@ public class ScreenView extends ViewGroup {
         }
     }
     
-    public void addIndicator(View view, FrameLayout.LayoutParams layoutParams){
-        mIndicatorCount = mIndicatorCount + 1;
-        addView(view, -1, layoutParams);
-    }
-    
-    public void addIndicatorAt(View view, FrameLayout.LayoutParams layoutParams, int pos) {
-        int j = Math.max(-1, Math.min(pos, mIndicatorCount));
-        if (j >= 0) {
-            j += getScreenCount();
-        }
-        mIndicatorCount = mIndicatorCount + 1;
-        addView(view, j, layoutParams);
-    }
-    
     @Override
-    public void addView(View child, int index, LayoutParams params) {
+    public void addView(View child, int index, ViewGroup.LayoutParams params) {
         int screenCount = getScreenCount();
         if (index >= 0) {
             screenCount = Math.min(index, screenCount);
@@ -1660,7 +1715,7 @@ public class ScreenView extends ViewGroup {
         }
         mScreenCounter = mScreenCounter + 1;
         refreshScrollBound();
-        super.addView(child, index, params);
+        super.addView(child, screenCount, params);
     }
 
     public boolean allowLongPress() {
@@ -1702,49 +1757,22 @@ public class ScreenView extends ViewGroup {
         isFromcomputeScroll = false;
     }
     
-    public boolean dispatchUnhandledMove(View view, int i) {
+    public boolean dispatchUnhandledMove(View view, int gravity) {
         boolean bFlag = true;
         
-        if (mCurrentScreen > 0) {
-            // 17 和 66是何意义
-            if (i != 17) {
-                if ((i == 66) && (mCurrentScreen < getScreenCount() - 1)) {
-                    snapToScreen(mCurrentScreen + 1);
-                }else {
-                    snapToScreen(mCurrentScreen - 1);
-                }
+        if ((gravity == (Gravity.TOP | Gravity.CENTER_HORIZONTAL | Gravity.CENTER)) && (mCurrentScreen < getScreenCount() - 1)) {
+            snapToScreen(mCurrentScreen + 1);
+            return true;
+        }else if(gravity == Gravity.CENTER) {
+            if (mCurrentScreen > 0) {
+                snapToScreen(mCurrentScreen - 1);
+                return true;
             }
-            bFlag = dispatchUnhandledMove(view, i);
         }
+        bFlag = dispatchUnhandledMove(view, gravity);
         return bFlag;
     }
     
-    public void removeIndicator(View view){
-        int i = indexOfChild(view);
-        if (i >= getScreenCount()) {
-            mIndicatorCount = mIndicatorCount - 1;
-            removeViewAt(i);
-            return;
-        }else {
-            throw new InvalidParameterException("The view passed through the parameter must be indicator.");
-        }
-    }
-    
-    public void setSeekBarPosition(FrameLayout.LayoutParams layoutParams){
-        if (layoutParams == null) {
-            if (mScreenSeekBar != null) {
-                removeIndicator(mScreenSeekBar);
-                mScreenSeekBar = null;
-            }
-        }else if (mScreenSeekBar != null) {
-            mScreenSeekBar.setLayoutParams(layoutParams);
-        }else {
-            mScreenSeekBar = new SeekBarIndicator(mContext);
-            mScreenSeekBar.setGravity(16);
-            mScreenSeekBar.setAnimationCacheEnabled(false);
-            addIndicator(mScreenSeekBar, layoutParams);
-        }
-    }
     /*
      * 设置最大Snap速率
      */

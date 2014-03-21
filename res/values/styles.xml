@@ -31,12 +31,37 @@
         <item name="android:shadowRadius">0.0</item>
     </style>
     
+    <style name="WorkspaceIconTitle.folder" parent="@style/WorkspaceIconTitle">
+        <item name="android:textColor">@color/folder_icon_title_text</item>
+        <item name="android:shadowColor">@color/folder_icon_title_text_shadow</item>
+    </style>
+    
     <style name="HotseatButton">
         <item name="android:layout_width">0.0dip</item>
         <item name="android:layout_height">fill_parent</item>
         <item name="android:layout_marginTop">1.0dip</item>
         <item name="android:layout_weight">0.0</item>
     </style>
+    
+    <style name="upside_edit_bar_item_label" parent="@android:style/TextAppearance.DeviceDefault.Medium.Inverse">
+        <item name="android:shadowColor">#5e000000</item>
+        <item name="android:shadowDx">0.0</item>
+        <item name="android:shadowDy">3.0</item>
+        <item name="android:shadowRadius">5.0</item>
+        <item name="android:layerType">software</item>
+    </style>
+    <style name="upside_apps_btn" parent="@android:style/TextAppearance.DeviceDefault.Medium">
+        <item name="android:textSize">@dimen/upside_apps_btn_text_size</item>
+        <item name="android:textColor">#ff3c3c3c</item>
+        <item name="android:gravity">bottom|center</item>
+        <item name="android:clickable">true</item>
+        <item name="android:shadowColor">#cdffffff</item>
+        <item name="android:shadowDx">0.0</item>
+        <item name="android:shadowDy">1.0</item>
+        <item name="android:shadowRadius">1.0</item>
+        <item name="android:layerType">software</item>
+    </style>
+    
     <!--
         Base application theme, dependent on API level. This theme is replaced
         by AppBaseTheme from res/values-vXX/styles.xml on newer devices.

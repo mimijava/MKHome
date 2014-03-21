@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<cn.minking.launcher.Folder android:id="@id/folder"
+    android:layout_gravity="top" 
+    android:orientation="vertical"  
+    android:background="@drawable/folder_background" 
+    android:clickable="true" 
+    android:animationCache="false" 
+    android:layout_width="fill_parent" 
+    android:layout_height="wrap_content"
+  	xmlns:android="http://schemas.android.com/apk/res/android">
+    <include layout="@layout/folder_header" />
+    <include layout="@layout/folder_grid"
+        android:layout_width="fill_parent" 
+        android:layout_height="wrap_content" />
+</cn.minking.launcher.Folder>

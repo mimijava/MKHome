@@ -9,8 +9,13 @@ package cn.minking.launcher;
  * 20140225: 创建桌面的HOTSEAT， HOTSEAT支持长按拖动图标
  * ====================================================================================
  */
+import java.util.ArrayList;
 import java.util.Iterator;
 
+import cn.minking.launcher.AllAppsList.RemoveInfo;
+import cn.minking.launcher.DropTarget.DragObject;
+import android.content.ComponentName;
+import android.content.ContentProviderOperation;
 import android.content.Context;
 import android.graphics.RectF;
 import android.util.AttributeSet;
@@ -19,7 +24,7 @@ import android.view.View;
 import android.widget.LinearLayout;
 
 public class HotSeats extends LinearLayout
-    implements android.view.View.OnLongClickListener{
+    implements android.view.View.OnLongClickListener, DragSource, DropTarget{
     
     private static int MAX_SEATS = -1;
     private static final ItemInfo PLACE_HOLDER_SEAT = new ItemInfo();
@@ -78,6 +83,143 @@ public class HotSeats extends LinearLayout
         }
     }
     
+    private int getSeatPosByX(int index, int max) {
+        int pos = 0;
+        if (max != 0){
+            pos = Math.max(0, Math.min((index - mLocation[0] - getPaddingLeft()) / getSeatWidth(max), max - 1));
+        }
+        return pos;
+    }
+
+    private int getSeatWidth(int max) {
+        int width;
+        if (max != 0) {
+            width = getWorkingWidth() / max;
+        } else {
+            width = getWorkingWidth();
+        }
+        return width;
+    }
+
+    private int getSeatsCount() {
+        int count = 0;
+        for (int i = 0; i < MAX_SEATS; i++){
+            if (mSavedSeats[i] != mDraggingItem && mSavedSeats[i] != null){
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private int getVisibleSeatsCount() {
+        int vCount = 0;
+        for (int i = 0; i < MAX_SEATS; i++){
+            if (mSavedSeats[i] != mDraggingItem 
+                && mSavedSeats[i] != PLACE_HOLDER_SEAT 
+                && mSavedSeats[i] != null){
+                vCount++;
+            }
+        }
+        return vCount;
+    }
+
+    private int getWorkingWidth() {
+        return getWidth() - getPaddingLeft() - getPaddingRight();
+    }
+
+    private boolean isDropAllowed(int index, ItemInfo iteminfo) {
+        int xPos = getSeatPosByX(index, getSeatsCount());
+        boolean bDrop = false;
+        if (mCurrentSeats[xPos] == null 
+            || !(mCurrentSeats[xPos] instanceof FolderInfo) 
+            || iteminfo.container <= 0L) {
+            bDrop = true;
+        } else {
+            bDrop = false;
+        }
+        return bDrop;
+    }
+
+    private boolean isDropAllowed(DragSource dragsource, ItemInfo iteminfo) {
+        boolean bDrop;
+        if (!mIsReplaceSupported || dragsource == this) {
+            bDrop = false;
+        } else {
+            bDrop = true;
+        }
+        if (mIsLoading || !bDrop && getVisibleSeatsCount() >= MAX_SEATS 
+                || (iteminfo.itemType != 0 
+                    && iteminfo.itemType != 1 
+                    && iteminfo.itemType != 2)){
+            bDrop = false;
+        }
+        return bDrop;
+    }
+
+    private boolean isDropAllowed(DropTarget.DragObject dragobject) {
+        boolean flag = false;
+        if (isDropAllowed(dragobject.dragSource, dragobject.dragInfo) 
+            && isDropAllowed(dragobject.x, dragobject.dragInfo)) {
+            flag = true;
+        }
+        return flag;
+    }
+
+    private void restoreSeats() {
+        for (int i = 0; i < MAX_SEATS; i++) {
+            ItemInfo iteminfo;
+            if (mDraggingItem == mSavedSeats[i]) {
+                iteminfo = null;
+            } else {
+                iteminfo = mSavedSeats[i];
+            }
+            setSeat(i, iteminfo);
+        }
+    }
+    
+    private void saveSeats() {
+        saveSeats(true);
+    }
+
+    /**
+     * 功能： 保存当前SEAT
+     * @param flag
+     */
+    private void saveSeats(boolean flag) {
+        ArrayList<ContentProviderOperation> arraylist = null;
+        if (flag){
+            arraylist = new ArrayList<ContentProviderOperation>();
+        }
+        int i = 0;
+        int j = 0;
+        
+        // 先从CurrentSeat中读取Seat保存到SaveSeat中
+        for (; i < MAX_SEATS; i++) {
+            if (mCurrentSeats[i] != null && mCurrentSeats[i] != PLACE_HOLDER_SEAT) {
+                mSavedSeats[j] = mCurrentSeats[i];
+                mSavedSeats[j].cellX = j;
+                if (arraylist != null){
+                    arraylist.add(LauncherModel.getMoveItemOperation(mSavedSeats[j], 
+                            LauncherSettings.Favorites.CONTAINER_HOTSEAT, 0, j, 0));
+                }
+                j++;
+            }
+        }
+        
+        if (arraylist != null && !arraylist.isEmpty()){
+            LauncherModel.applyBatch(mContext, "cn.minking.launcher.settings", arraylist);
+        }
+        
+        for (; j < MAX_SEATS; j++) {
+            mSavedSeats[j] = null;
+        }
+        
+        for (int k = 0; k < MAX_SEATS; k++) {
+            setSeat(k, mSavedSeats[k]);
+        }
+        
+    }
+    
     /**
      * 功能： 给Item分配Seat位置
      */
@@ -111,6 +253,154 @@ public class HotSeats extends LinearLayout
         }
     }
     
+    private int setSeats(int index, ItemInfo iteminfo) {
+        int k1 = -1;
+        {
+            
+            int vCount = getVisibleSeatsCount();
+            if (vCount != MAX_SEATS) {
+                if (vCount != 0)
+                {
+                    int seatWidth = getSeatWidth(vCount);
+                    int l;
+                    if (!mIsReplaceSupported || mDraggingItem != null)
+                        l = 0;
+                    else
+                        l = seatWidth / 4;
+                    int j = 0;
+                    do
+                    {
+                        if (j >= vCount + 1){}
+                        int l1 = mLocation[0] + getPaddingLeft() + seatWidth * j + seatWidth / 2;
+                        if (j < vCount && Math.abs(index - l1) < l)
+                            break;
+                        if (index <= l + (l1 - seatWidth) || index > l1 - l)
+                        {
+                            j++;
+                        } else {
+                            vCount = 0;
+                            for (int i1 = 0; i1 < MAX_SEATS; i1++) {
+                                if (i1 != j) {
+                                    if (vCount < MAX_SEATS) {
+                                        if (mDraggingItem != null 
+                                            && mDraggingItem == mSavedSeats[vCount]) {
+                                            vCount++;
+                                        }
+                                        setSeat(i1, mSavedSeats[vCount]);
+                                        vCount++;
+                                    }
+                                } else {
+                                    setSeat(i1, iteminfo);
+                                }
+                            }
+                            if (k1 >= MAX_SEATS) {
+                                k1 = -2;
+                            }
+                        }
+                    } while (true);
+                    k1 = j;
+                } else {
+                    k1 = 0;
+                }
+            } else {
+                k1 = getSeatPosByX(index, vCount);
+            }
+        }
+        if (k1 >= 0) {
+            restoreSeats();
+            setSeat(k1, iteminfo);
+        }
+        return k1;
+    }
+    
+    @Override
+    public boolean acceptDrop(DragObject dragobject) {
+        return isDropAllowed(dragobject.dragSource, dragobject.dragInfo);
+    }
+
+    @Override
+    public DropTarget getDropTargetDelegate(DragObject dragobject) {
+        return null;
+    }
+
+    @Override
+    public boolean isDropEnabled() {
+        return true;
+    }
+
+    @Override
+    public void onDragEnter(DragObject dragobject) {
+    }
+
+    @Override
+    public void onDragExit(DragObject dragobject) {
+        if (isDropAllowed(dragobject)){
+            restoreSeats();
+        }
+    }
+
+    @Override
+    public void onDragOver(DragObject dragobject) {
+        if (isDropAllowed(dragobject)){
+            setSeats(dragobject.x, PLACE_HOLDER_SEAT);
+        }
+    }
+
+    @Override
+    public boolean onDrop(DragObject dragobject) {
+        boolean flag;
+        if (isDropAllowed(dragobject.x, dragobject.dragInfo)) {
+            int pos = setSeats(dragobject.x, dragobject.dragInfo);
+            if (pos != -1) {
+                ItemInfo iteminfo;
+                if (pos < 0) {
+                    iteminfo = null;
+                } else {
+                    iteminfo = mSavedSeats[pos];
+                }
+                if (iteminfo != null) {
+                    iteminfo.container = dragobject.dragInfo.container;
+                    iteminfo.screenId = dragobject.dragInfo.screenId;
+                    iteminfo.cellX = dragobject.dragInfo.cellX;
+                    iteminfo.cellY = dragobject.dragInfo.cellY;
+                    dragobject.dragInfo.cellX = pos;
+                }
+                
+                saveSeats();
+                
+                if (mDraggingItem == null) {
+                    LauncherModel.moveItemInDatabase(mContext, dragobject.dragInfo, 
+                            LauncherSettings.Favorites.CONTAINER_HOTSEAT, 0, dragobject.dragInfo.cellX, 0);
+                    if (iteminfo != null) {
+                        Context context = mContext;
+                        long container = iteminfo.container;
+                        long screen = iteminfo.screenId;
+                        int cx = iteminfo.cellX;
+                        int cy = iteminfo.cellY;
+                        LauncherModel.moveItemInDatabase(context, iteminfo, container, screen, cx, cy);
+                        mLauncher.addItem(iteminfo, false);
+                    }
+                }
+                flag = true;
+            } else {
+                flag = false;
+            }
+        } else {
+            flag = false;
+        }
+        return flag;
+    }
+
+    @Override
+    public void onDropCompleted(View view, DragObject dragobject, boolean flag) {
+        mDraggingItem = null;
+        if (flag) {
+            saveSeats();
+        } else {
+            restoreSeats();
+        }
+    }
+
     /**
      * 功能：  判断是否为空的SEAT
      */
@@ -161,9 +451,8 @@ public class HotSeats extends LinearLayout
      */
     public void startBinding(){
         for (int i = 0; i < MAX_SEATS; i++) {
-            
             // 调用removeAllViewsInLayout()，清空以前的数据
-//          ((HotSeatButton)getChildAt(i)).removeAllViewsInLayout();
+            ((HotSeatButton)getChildAt(i)).removeAllViewsInLayout();
             mSavedSeats[i] = null;
             mCurrentSeats[i] = null;
         }
@@ -187,18 +476,49 @@ public class HotSeats extends LinearLayout
         return (ItemIcon)object;
     }
     
-    private void saveSeats(){
-        saveSeats(true);
-    }
-
-    private void saveSeats(boolean flag){
-        
+    public void removeItems(ArrayList<RemoveInfo> arraylist){
+        boolean flag = false;
+        Iterator<RemoveInfo> iterator = arraylist.iterator();
+        while (iterator.hasNext()) {
+            RemoveInfo removeinfo = iterator.next();
+            int i = 0;
+            while (i < MAX_SEATS)  {
+                if (mSavedSeats[i] != null){
+                    if (mSavedSeats[i] instanceof FolderInfo) {
+                            FolderInfo folderinfo = (FolderInfo)mSavedSeats[i];
+                            folderinfo.removeItems(arraylist, mLauncher);
+                            folderinfo.notifyDataSetChanged();
+                    } else {
+                        ComponentName componentname = ((ShortcutInfo)mSavedSeats[i]).intent.getComponent();
+                        if (componentname != null && removeinfo.packageName.equals(componentname.getPackageName())) {
+                            setSeat(i, null);
+                            flag = true;
+                        }
+                    }
+                }
+                i++;
+            }
+        } 
+        saveSeats(flag);
+        return;
     }
     
     @Override
-    public boolean onLongClick(View v) {
-        // TODO Auto-generated method stub
-        return false;
+    public boolean onLongClick(View view) {
+        boolean flag = false;
+        if (!mIsLoading && mDraggingItem == null) {
+            mDraggingItem = (ItemInfo)view.getTag();
+            if (mDraggingItem != null) {
+                if (!(mDraggingItem instanceof FolderInfo) || !((FolderInfo)mDraggingItem).opened) {
+                    if (!mLauncher.isFolderShowing()) {
+                        mDragController.startDrag(((HotSeatButton)view).getIcon(), this, mDraggingItem, DragController.DRAG_ACTION_COPY);
+                        setSeat(mDraggingItem.cellX, PLACE_HOLDER_SEAT);
+                        flag = true;
+                    }
+                }
+            } 
+        } 
+        return flag;
     }
     
     

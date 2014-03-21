@@ -33,23 +33,23 @@ public class LauncherAppWidgetHostView extends AppWidgetHostView
 
     public boolean onInterceptTouchEvent(MotionEvent motionevent) {
         boolean flag = true;
-        if (!mOnLongClickAgent.onInterceptTouchEvent(motionevent) && !mLauncher.isInEditing())
+        if (!mOnLongClickAgent.onInterceptTouchEvent(motionevent) && !mLauncher.isInEditing()) {
             flag = super.onInterceptTouchEvent(motionevent);
+        }
         return flag;
     }
 
-    public boolean onTouchEvent(MotionEvent motionevent)
-    {
+    public boolean onTouchEvent(MotionEvent motionevent) {
         boolean flag;
-        if (!mOnLongClickAgent.onTouchEvent(motionevent))
+        if (!mOnLongClickAgent.onTouchEvent(motionevent)){
             flag = super.onTouchEvent(motionevent);
-        else
+        } else {
             flag = true;
+        }
         return flag;
     }
 
-    public void setOnLongClickListener(android.view.View.OnLongClickListener onlongclicklistener)
-    {
+    public void setOnLongClickListener(android.view.View.OnLongClickListener onlongclicklistener) {
         mOnLongClickAgent.setOnLongClickListener(onlongclicklistener);
     }
 }
