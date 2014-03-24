@@ -507,8 +507,7 @@ public class CellLayout extends ViewGroup
     }
     
     
-    private void rollbackLayout()
-    {
+    private void rollbackLayout() {
         if (mLayoutBackupValid && copyOccupiedCells(mOccupiedCellBak, mOccupiedCell))
             relayoutByOccupiedCells();
     }
@@ -956,11 +955,9 @@ public class CellLayout extends ViewGroup
         return flag;
     }
 
-    void onDropAborted(View view)
-    {
+    void onDropAborted(View view) {
         getHandler().removeCallbacks(mStayConfirm);
-        if (view != null)
-        {
+        if (view != null) {
             LayoutParams layoutparams = (LayoutParams)view.getLayoutParams();
             layoutparams.isDragging = false;
             rollbackLayout();
@@ -972,8 +969,78 @@ public class CellLayout extends ViewGroup
     
     @Override
     public boolean onInterceptTouchEvent(MotionEvent ev) {
-        // TODO Auto-generated method stub
-        return super.onInterceptTouchEvent(ev);
+        boolean flag = false;
+        
+        int action = ev.getAction();
+        
+        if (action == MotionEvent.ACTION_UP) {
+            mCellInfo.cell = null;
+            mCellInfo.cellX = -1;
+            mCellInfo.cellY = -1;
+            mCellInfo.spanX = 0;
+            mCellInfo.spanY = 0;
+            mLastDownOnOccupiedCell = false;
+            if (mOnLongClickAgent.onInterceptTouchEvent(ev)){
+                flag = true;
+            }
+            return flag;
+        }
+        
+        int x = (int)ev.getX() + mScrollX;
+        int y = (int)ev.getY() + mScrollY;
+        
+        View view;
+        for (int i = 0; i < getChildCount(); i++) {
+            view = getChildAt(i);
+            if (view.getVisibility() == View.VISIBLE || view.getAnimation() != null) {
+                view.getHitRect(mRect);
+                if (mRect.contains(x, y)){
+                    LayoutParams layoutParams = (LayoutParams)view.getLayoutParams();
+                    mCellInfo.cell = view;
+                    mCellInfo.cellX = layoutParams.cellX;
+                    mCellInfo.cellY = layoutParams.cellY;
+                    mCellInfo.spanX = layoutParams.cellHSpan;
+                    mCellInfo.spanY = layoutParams.cellVSpan;
+                    mLastDownOnOccupiedCell = true;
+                    
+                    break;
+                }
+            }
+        }
+        
+        if (mLastDownOnOccupiedCell && (mCellInfo.cell != null)) {
+            ItemInfo itemInfo = (ItemInfo)mCellInfo.cell.getTag();
+            if (itemInfo != null) {
+                if (!mLauncher.isInEditing() 
+                        || itemInfo.itemType == LauncherSettings.Favorites.ITEM_TYPE_FOLDER 
+                        || itemInfo.itemType == LauncherSettings.Favorites.ITEM_TYPE_LIVE_FOLDER 
+                        || itemInfo.itemType == LauncherSettings.Favorites.ITEM_TYPE_GADGET){
+                    flag = false;
+                } else {
+                    flag = true;
+                }
+            } else {
+                flag = false;
+                return flag;
+            }
+        } else {
+            pointToCell(x, y, mCellXY);
+            mCellInfo.cell = null;
+            mCellInfo.cellX = mCellXY[0];
+            mCellInfo.cellY = mCellXY[1];
+            mCellInfo.spanX = 1;
+            mCellInfo.spanY = 1;
+        }
+        
+        long duration;
+        if (!mLastDownOnOccupiedCell) {
+            duration = 800L;
+        } else {
+            duration = 200L;
+        }
+        mOnLongClickAgent.setEditingTimeout(duration);
+        
+        return flag;
     }
 
     @Override

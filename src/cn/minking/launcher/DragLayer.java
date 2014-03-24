@@ -371,46 +371,61 @@ public class DragLayer extends FrameLayout {
      * @return
      */
     private boolean handleTouchDown(MotionEvent motionevent, boolean flag) {
-        boolean flag1 = true;
         Rect rect = new Rect();
-        int i = (int)motionevent.getX();
-        int j = (int)motionevent.getY();
+        int x = (int)motionevent.getX();
+        int y = (int)motionevent.getY();
         Iterator<AppWidgetResizeFrame> iterator = mResizeFrames.iterator();
         while(iterator.hasNext()) {
             AppWidgetResizeFrame appwidgetresizeframe = (AppWidgetResizeFrame)iterator.next();
             appwidgetresizeframe.getHitRect(rect);
-            if (rect.contains(i, j) 
-                && appwidgetresizeframe.beginResizeIfPointInRegion(i - appwidgetresizeframe.getLeft(), 
-                        j - appwidgetresizeframe.getTop())){
+            if (rect.contains(x, y) 
+                && appwidgetresizeframe.beginResizeIfPointInRegion(
+                        x - appwidgetresizeframe.getLeft(), 
+                        y - appwidgetresizeframe.getTop())){
                 mCurrentResizeFrame = appwidgetresizeframe;
-                mXDown = i;
-                mYDown = j;
-                requestDisallowInterceptTouchEvent(flag1);    
+                mXDown = x;
+                mYDown = y;
+                // 如果触摸在DragLayer处理了，则不传入父级VIEW
+                requestDisallowInterceptTouchEvent(flag);
+                return true;
             }
         }
-        flag1 = false;
-        return flag1;
+        
+        return false;
     }
-
+    
+    /**
+     * 功能： 是否截断触摸事件
+     */
+    @Override
+    public void requestDisallowInterceptTouchEvent(boolean disallowIntercept) {
+        if (mOldPositions == null || !disallowIntercept){
+            super.requestDisallowInterceptTouchEvent(disallowIntercept);
+        }
+    }
 
     @Override
     public boolean onInterceptTouchEvent(MotionEvent ev) {
         boolean flag = true;
         
-        if (ev.getAction() == MotionEvent.ACTION_DOWN && handleTouchDown(ev, flag)) return flag;
+        // 处理DOWN事件
+        if (ev.getAction() == MotionEvent.ACTION_DOWN && handleTouchDown(ev, flag)) {
+            return flag;
+        }
             
+        // 判断是否为两指触摸
         if (ev.getPointerCount() != 2) {
             if (mOldPositions != null) {
                 mOldPositions = null;
             }
         } else {
             if (mOldPositions != null) {
-                if (!mLauncher.isSceneAnimating())
-                    if (mLauncher.isSceneShowing())
-                    {
+                if (!mLauncher.isSceneAnimating()) {
+                    if (mLauncher.isSceneShowing()) {
                         if (!mLauncher.isFolderShowing() 
                             && (ev.getY(0) - mOldPositions[0] < (float)(-mScaledUpsideScreenOutTouch))
                             && (ev.getY(1) - mOldPositions[1] < (float)(-mScaledUpsideScreenOutTouch))) {
+                            
                             mOldPositions = null;
                             mLauncher.hideSceneScreen();
                             return true;
@@ -423,12 +438,14 @@ public class DragLayer extends FrameLayout {
                             && (ev.getY(1) - mOldPositions[1] > (float)mScaledUpsideScreenOutTouch)
                             && mLauncher.getUpsideScene() != null 
                             && mLauncher.getWorkspace().isTouchStateNotInScroll()) {
+                            
                             mOldPositions = null;
                             mLauncher.getWorkspace().finishCurrentGesture();
                             mLauncher.showSceneScreen();
                             return true;
                         }
                     }
+                }
             } else {
                 float af[] = new float[2];
                 af[0] = ev.getY(0);
@@ -445,21 +462,21 @@ public class DragLayer extends FrameLayout {
     public boolean onTouchEvent(MotionEvent ev) {
         boolean flag1 = true;
         boolean flag = false;
-        int i = ev.getAction();
-        int j = (int)ev.getX();
-        int k = (int)ev.getY();
-        if (ev.getAction() != 0 || !handleTouchDown(ev, false)) {
+        
+        int x = (int)ev.getX();
+        int y = (int)ev.getY();
+        if (ev.getAction() != MotionEvent.ACTION_DOWN || !handleTouchDown(ev, false)) {
             if (mCurrentResizeFrame != null) {
                 flag = true;
-                switch (i) {
-                case 1: // '\001'
-                case 3: // '\003'
-                    mCurrentResizeFrame.commitResizeForDelta(j - mXDown, k - mYDown);
+                switch (ev.getAction()) {
+                case MotionEvent.ACTION_UP: // '\001'
+                case MotionEvent.ACTION_CANCEL: // '\003'
+                    mCurrentResizeFrame.commitResizeForDelta(x - mXDown, y - mYDown);
                     mCurrentResizeFrame = null;
                     break;
 
-                case 2: // '\002'
-                    mCurrentResizeFrame.visualizeResizeForDelta(j - mXDown, k - mYDown);
+                case MotionEvent.ACTION_MOVE: // '\002'
+                    mCurrentResizeFrame.visualizeResizeForDelta(x - mXDown, y - mYDown);
                     break;
                 }
             }
@@ -469,18 +486,9 @@ public class DragLayer extends FrameLayout {
         }
         return flag1;
     }
-
     
-    
-    @Override
-    public void requestDisallowInterceptTouchEvent(boolean disallowIntercept) {
-        if (mOldPositions == null || !disallowIntercept){
-            super.requestDisallowInterceptTouchEvent(disallowIntercept);
-        }
-    }
-
     /**
-     *  功能： 桌面背景显示
+     *  功能： 桌面背景显示， 从配置表中读取壁纸的显示方式
      *  调用： 使用于Launcher.java
      */
     public void updateWallpaper() {
@@ -507,6 +515,9 @@ public class DragLayer extends FrameLayout {
         updateWallpaperOffset();
     }
     
+    /**
+     *  功能： 壁纸显示起点
+     */
     public void updateWallpaperOffset() {
         if (mWallpaper == null) {
             mWallpaperManager.setWallpaperOffsetSteps(mWpStepX, mWpStepY);

@@ -91,22 +91,22 @@ public class OnLongClickAgent{
         int i = 0xff & motionevent.getAction();
         if (mHasPerformedLongPress) {
             mHasPerformedLongPress = false;
-            if (i == 0){
-                switch (i)
-                {
-                default:
-                    flag = handleTouchEvent(motionevent);
-                    break;
-
-                case MotionEvent.ACTION_DOWN: // '\0'
-                    mDonwX = motionevent.getX();
-                    mDonwY = motionevent.getY();
-                    postCheckForLongClick();
-                    break;
-                }
-                flag = flag;
+            if (i != MotionEvent.ACTION_DOWN){
+                flag = true;
+                return flag;
             }
-            flag = true;
+        }
+        
+        switch (i) {
+        default:
+            flag = handleTouchEvent(motionevent);
+            break;
+
+        case MotionEvent.ACTION_DOWN: // '\0'
+            mDonwX = motionevent.getX();
+            mDonwY = motionevent.getY();
+            postCheckForLongClick();
+            break;
         }
         return flag;
     }

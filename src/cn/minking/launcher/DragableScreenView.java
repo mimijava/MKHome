@@ -22,10 +22,11 @@ public class DragableScreenView extends ScreenView
     public final static int DIRECTION_LEFT = 0;
     public final static int DIRECTION_RIGHT = 1;
     
-    public final static int DRAG_STATE_IDLE = 0;
-    public final static int DRAG_STATE_SCROLLING = 1;
+    public final static int DRAG_IN_SCREEN = 0;
+    public final static int DRAG_ATTACH_EDGE = 1;
     
-    public final static int DELTA_X = 30;
+    // 当手指移动到屏幕的边缘，需要切换至下一个屏幕
+    public final static int EDGE_WIDTH = 30;
 
     /******* 状态 *******/
     protected int mDragScrollState;
@@ -51,7 +52,7 @@ public class DragableScreenView extends ScreenView
             } else {
                 scrollDragingRight();
             }
-            mDragScrollState = DRAG_STATE_IDLE;
+            mDragScrollState = DRAG_IN_SCREEN;
         }
  
         public void setDirection(int i) {
@@ -65,7 +66,7 @@ public class DragableScreenView extends ScreenView
 
     public DragableScreenView(Context context, AttributeSet attrs, int defStyle) {
         super(context, attrs, defStyle);
-        mDragScrollState = DRAG_STATE_IDLE;
+        mDragScrollState = DRAG_IN_SCREEN;
         mDragScrollRunnable = new ScrollRunnable();
         mDragScrollHandler = new Handler();
     }
@@ -116,16 +117,18 @@ public class DragableScreenView extends ScreenView
             if (getTouchState() == TOUCH_STATE_SCROLLING) {
                 final int pointerIndex = ev.findPointerIndex(mActivePointerId);
                 int x = (int)ev.getX(pointerIndex);
-                if (x >= DELTA_X && x <= (getWidth() - DELTA_X)) {
-                    if (mDragScrollState == DRAG_STATE_SCROLLING) {
-                        mDragScrollState = DRAG_STATE_IDLE;
+                
+                // 如果手指滑动至屏幕边缘
+                if (x >= EDGE_WIDTH && x <= (getWidth() - EDGE_WIDTH)) {
+                    if (mDragScrollState == DRAG_ATTACH_EDGE) {
+                        mDragScrollState = DRAG_IN_SCREEN;
                         mDragScrollHandler.removeCallbacks(mDragScrollRunnable);
                     }
                 } else {                
-                    if (mDragScrollState == DRAG_STATE_IDLE) {
-                        mDragScrollState = DRAG_STATE_SCROLLING;
+                    if (mDragScrollState == DRAG_IN_SCREEN) {
+                        mDragScrollState = DRAG_ATTACH_EDGE;
                         ScrollRunnable scrollrunnable = mDragScrollRunnable;
-                        if (x >= 30){
+                        if (x >= EDGE_WIDTH){
                             direction = DIRECTION_RIGHT;
                         }
                         scrollrunnable.setDirection(direction);

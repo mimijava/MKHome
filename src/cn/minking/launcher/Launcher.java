@@ -29,6 +29,7 @@ import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.ProgressDialog;
+import android.app.StatusBarManager;
 import android.app.WallpaperManager;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
@@ -43,12 +44,14 @@ import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.database.ContentObserver;
 import android.graphics.Point;
+import android.graphics.Rect;
 import android.nfc.Tag;
 import android.os.Bundle;
 import android.os.Handler;
 import android.preference.PreferenceManager;
 import android.util.Log;
 import android.view.Display;
+import android.view.HapticFeedbackConstants;
 import android.view.LayoutInflater;
 import android.view.Surface;
 import android.view.View;
@@ -137,9 +140,10 @@ public class Launcher extends Activity implements OnClickListener,
     /// M: 用于强制重载WORKSPACE
     private boolean mIsLoadingWorkspace;
     
+    private boolean mOnResumeExpectedForActivityResult;
+    
     private static boolean mIsHardwareAccelerated = false;
 
-    private boolean mPaused = true;
     private boolean mRestoring = false;
     private boolean mWaitingForResult;
     private boolean mOnResumeNeedsLoad;
@@ -229,6 +233,7 @@ public class Launcher extends Activity implements OnClickListener,
         mPositionSnap = null;
         mEditingState = 7;
         mLoadingProgressDialog = null;
+        mOnResumeExpectedForActivityResult = false;
     }
     
     private boolean acceptFilter() {
@@ -336,7 +341,8 @@ public class Launcher extends Activity implements OnClickListener,
         Log.d(TAG, "onCreate");
         Window localWindow = getWindow();
         localWindow.setFlags(WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN);
-        localWindow.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        // 是否全屏显示，不带状态栏
+        //localWindow.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN);
         //mIsHardwareAccelerated = ((Window)(localWindow)).getWindowManager().isHardwareAccelerated();
         LauncherApplication launcherApplication = (LauncherApplication)getApplication();
         
@@ -352,9 +358,6 @@ public class Launcher extends Activity implements OnClickListener,
         mApplicationsMessage = new ApplicationsMessage(this);
         
         setWallpaperDimension();
-        
-        
-        mPaused = false;
         
         // 设置Launcher布局
         setContentView(R.layout.launcher);
@@ -469,20 +472,24 @@ public class Launcher extends Activity implements OnClickListener,
     @Override
     protected void onPause() {
         
-        mPaused = true;
         super.onPause();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        
+        mWorkspace.onResume();
+        closeFolder();
+        mDragLayer.clearAllResizeFrames();
+        if (!mOnResumeExpectedForActivityResult && isInEditing()){
+            setEditingState(7);
+        }
+        mOnResumeExpectedForActivityResult = false;
         // 显示桌面背景
-        mDragLayer.updateWallpaper();        
-        mPaused = false;
+        mDragLayer.updateWallpaper();
         
         sPausedFromUserAction = false;
-        
+        scrollToDefault();
     }
 
     @Override
@@ -519,14 +526,67 @@ public class Launcher extends Activity implements OnClickListener,
     }
 
     @Override
-    public boolean onLongClick(View paramView) {
-        return false;
+    public boolean onLongClick(View view) {
+        boolean flag;
+        if (!isWorkspaceLocked()) {
+            if (!(view instanceof CellLayout)){
+                view = (View)view.getParent();
+            }
+            CellLayout.CellInfo cellinfo = (CellLayout.CellInfo)view.getTag();
+            if (cellinfo != null) {
+                if (mWorkspace.allowLongPress()){
+                    if (cellinfo.cell != null) {
+                        if (!(cellinfo.cell instanceof Folder)) {
+                            mWorkspace.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS, 
+                                    HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING);
+                            mWorkspace.startDrag(cellinfo);
+                        }
+                    } else {
+                        int editState;
+                        if (!isInEditing()) {
+                            editState = 8;
+                        } else {
+                            editState = 7;
+                        }
+                        setEditingState(editState);
+                        mWorkspace.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS, 
+                                HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING);
+                    }
+                }
+                flag = true;
+            } else {
+                flag = true;
+            }
+        } else {
+            flag = false;
+        }
+        return flag;
     }
 
     @Override
-    public void onClick(View paramView) {
-        // TODO Auto-generated method stub
-
+    public void onClick(View view) {
+//        Object object = view.getTag();
+//        if ((object instanceof FolderInfo)) {
+//          openFolder((FolderInfo)object, view);
+//      } else {
+//          if (!isInEditing()) {
+//              ShortcutInfo shortcutinfo = (ShortcutInfo)object;
+//              if (!shortcutinfo.isPresetApp()) {
+//                  if (shortcutinfo.mIconType != 3/*LauncherSettings.Favorites.ICON_TYPE_RESOURCE*/) {
+//                      Intent intent = new Intent(shortcutinfo.intent);
+//                      int loc[] = new int[2];
+//                      view.getLocationOnScreen(loc);
+//                      intent.setSourceBounds(new Rect(loc[0], loc[1], 
+//                              loc[0] + view.getWidth(), loc[1] + view.getHeight()));
+//                      startActivity(intent, object);
+//                      if (2 == shortcutinfo.mIconType) {
+//                          shortcutinfo.loadContactInfo(this);
+//                          ((ShortcutIcon)view).updateInfo(this, shortcutinfo);
+//                      } 
+//                  } 
+//              } 
+//          }
+//      }
     }
     
     public void startActivityEx(Intent intent, Bundle options) {

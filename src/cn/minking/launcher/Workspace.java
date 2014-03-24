@@ -381,7 +381,7 @@ public class Workspace extends DragableScreenView
         mContext = context;
         mResolver = context.getContentResolver();
         mWallpaperManager = WallpaperManager.getInstance(context);
-        mInflater = ((LayoutInflater)context.getSystemService("layout_inflater"));
+        mInflater = ((LayoutInflater)context.getSystemService(Context.LAYOUT_INFLATER_SERVICE));
         Resources localResources = getResources();
         String str = localResources.getString(R.string.home_indicator);
         FrameLayout.LayoutParams localLayoutParams 
@@ -613,7 +613,7 @@ public class Workspace extends DragableScreenView
     private void updateWallpaperOffset() {
         if (getScreenCount() > 0) {
             if (getTouchState() != 7) {
-                int i = getScreen(-1 + getScreenCount()).getRight();
+                int i = getScreen(getScreenCount() - 1).getRight();
                 int j = getWidth();
                 int offset;
                 if (!isInNormalEditingMode()) {
@@ -1196,7 +1196,8 @@ public class Workspace extends DragableScreenView
     @Override
     public boolean dispatchTouchEvent(MotionEvent ev) {
         int i = ev.getPointerCount();
-        if (!mEditingModeAnimating && !mThumbnailView.isShowing() && getTouchState() == 0 && 3 == i){
+        if (!mEditingModeAnimating && !mThumbnailView.isShowing() 
+                && getTouchState() == 0 && 3 == i){
             if (mLastTouchPointerCount == i) {
                 if (!mLauncher.isInEditing() && 0.7F * mInitThreePinchSize > getThreePinchSize(ev)) {
                     finishCurrentGesture();
@@ -1208,7 +1209,7 @@ public class Workspace extends DragableScreenView
         }
         mLastTouchPointerCount = i;
         boolean flag;
-        if (ev.getAction() != 0 || !mLauncher.isWorkspaceLocked()){
+        if (ev.getAction() != MotionEvent.ACTION_DOWN || !mLauncher.isWorkspaceLocked()){
             flag = super.dispatchTouchEvent(ev);
         } else {
             flag = false;

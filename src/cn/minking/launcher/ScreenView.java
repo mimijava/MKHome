@@ -24,6 +24,7 @@ import android.graphics.Rect;
 import android.os.Parcel;
 import android.os.Parcelable;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
@@ -292,14 +293,14 @@ public class ScreenView extends ViewGroup {
             mTension = 0F;
         }
         
-        public void setDistance(int i, int j) {
-            float f;
-            if (i <= 0) {
-                f = mOvershootTension;
+        public void setDistance(int screenDelta, int velocity) {
+            float tension;
+            if (screenDelta <= 0) {
+                tension = mOvershootTension;
             }else {
-                f = mOvershootTension / (float)i;
+                tension = mOvershootTension / (float)screenDelta;
             }
-            mTension = f;
+            mTension = tension;
         }
         
         /*
@@ -307,111 +308,105 @@ public class ScreenView extends ViewGroup {
          * @see android.animation.TimeInterpolator#getInterpolation(float)
          */
         @Override
-        public float getInterpolation(float f) {
-            float f1 = f - 1F;
-            return 1F + f1 * f1 * (f1 * (1F + mTension) + mTension);
+        public float getInterpolation(float t) {
+            t -= 1f;
+            return 1f + t * t * (t * (1f + mTension) + mTension);
         }
         
     }
     
-    /*
+    /**
      * 手势速率监测
      */
-    private class GestureVelocityTracker{
-        public static final int FLING_LEFT = 1;
-        public static final int FLING_RIGHT = 2;
-        public static final int FLING_CANCEL = 3;
-        public static final int FLING_ALIGN = 4;
-        private static final float MIN_FOLD_DIST = 3.0F;
-        private int mPointerId = INVALID_POINTER;
-        private float mFoldX = -1.0F;
-        private float mPreX = -1.0F;
-        private float mStartX = -1.0F;
+    private class GestureVelocityTracker {
+        private int mPointerId;
+        private float mFoldX;
+        private float mPrevX;
+        private float mStartX;
         private VelocityTracker mVelocityTracker;
-        
-        public GestureVelocityTracker() {
-        
+
+        private void reset() {
+            mPointerId = -1;
+            mStartX = -1;
+            mFoldX = -1;
+            mPrevX = -1;
         }
-        
-        private void reset(){
-            mPointerId = INVALID_POINTER;
-            mStartX = -1.0F;
-            mStartX = -1.0F;
-            mPreX = -1.0F;
-        }
-        
-        public void addMovement(MotionEvent motionEvent) {
-            float motionPointer = motionEvent.getX();
-            
+
+        public void addMovement(MotionEvent motionevent) {
             if (mVelocityTracker == null) {
                 mVelocityTracker = VelocityTracker.obtain();
-                mVelocityTracker.addMovement(motionEvent);
             }
-            if (mPointerId != INVALID_POINTER) {
-                int i = motionEvent.findPointerIndex(mPointerId);
-                if (i == -1) {
-                    mPointerId = INVALID_POINTER;
-                    return;
+            mVelocityTracker.addMovement(motionevent);
+            float f = motionevent.getX();
+            if (mPointerId != -1) {
+                int i = motionevent.findPointerIndex(mPointerId);
+                if (i == INVALID_POINTER) {
+                    mPointerId = -1;
+                } else {
+                    f = motionevent.getX(i);
                 }
-                motionPointer = motionEvent.getX(i);
             }
-            if (mStartX < 0.0F) {
-                mStartX = motionPointer;
-                return;
-            }
-            if (mPreX < 0.0F) {
-                mPreX = motionPointer;
-                return;
-            }
-            if (mFoldX < 0.0F) {
-                if (((mPreX <= mStartX) || (motionPointer >= mPreX))
-                        && ((mPreX >= mStartX) || (motionPointer <= mPreX)|| (Math.abs(motionPointer - mStartX) <= MIN_FOLD_DIST))) {
-                    mFoldX = mPreX;
-                    mStartX = mFoldX;
-                    if ((mFoldX == mPreX) 
-                            || (((mPreX <= mFoldX) || (motionPointer >= mPreX)) 
-                                    && ((mPreX > mFoldX) || (motionPointer <= mPreX) || (Math.abs(motionPointer - mFoldX) <= MIN_FOLD_DIST)))) {
-                        mPreX = motionPointer;
+            if (mStartX >= 0F) {
+                if (mPrevX >= 0F) {
+                    if (mFoldX >= 0F) {
+                        if (mFoldX != mPrevX && 
+                                (mPrevX > mFoldX && f < mPrevX 
+                                        || mPrevX < mFoldX && f > mPrevX) 
+                                && Math.abs(f - mFoldX) > 3F) {
+                            mStartX = mFoldX;
+                            mFoldX = mPrevX;
+                        }
+                    } else {
+                        if ((mPrevX > mStartX && f < mPrevX 
+                                || mPrevX < mStartX && f > mPrevX) 
+                            && Math.abs(f - mStartX) > 3F) {
+                            mFoldX = mPrevX;
+                        }
                     }
-                    
+                    mPrevX = f;
+                } else {
+                    mPrevX = f;
                 }
+            } else {
+                mStartX = f;
             }
         }
-        
-        public int getFlingDirection(float paramFloat) {
-            if (paramFloat > 300.0F) {
-                if (mFoldX < 0.0F) {
-                    if (mPreX <= mStartX) {
-                        if (mPreX < mFoldX) {
-                            if (mScrollX < getCurrentScreen().getLeft()) {
-                                return FLING_CANCEL;
-                            }else {
-                                return FLING_RIGHT;
+
+        public int getFlingDirection(float f) {
+            int fDir = 1;
+            if (f <= 300F) {
+                fDir = 4;
+            } else {
+                if (mFoldX >= 0F) {
+                    if (mPrevX >= mFoldX) {
+                        if (mPrevX <= mFoldX) {
+                            fDir = 3;
+                        } else {
+                            if (mScrollX > getCurrentScreen().getLeft()) {
+                                fDir = 3;
                             }
                         }
-                        return FLING_LEFT;
+                    } else {
+                        if (mScrollX >= getCurrentScreen().getLeft()){
+                            fDir = 2;
+                        } else {
+                            fDir = 3;
+                        }
                     }
-                    return FLING_RIGHT;
+                } else {
+                    if (mPrevX <= mStartX) {
+                        fDir = 2;
+                    }
                 }
             }
-            return FLING_ALIGN;
+            return fDir;
         }
-        
-        public float getXVelocity(int paramInt1, int paramInt2, int paramInt3) {
-            mVelocityTracker.computeCurrentVelocity(paramInt1, paramInt2);
-            return mVelocityTracker.getXVelocity(paramInt3);
+
+        public float getXVelocity(int i, int j, int k) {
+            mVelocityTracker.computeCurrentVelocity(i, j);
+            return mVelocityTracker.getXVelocity(k);
         }
-        
-        public void init(int pointer_id) {
-            // 创建一个速率监测器
-            if (mVelocityTracker == null) {
-                mVelocityTracker = VelocityTracker.obtain();
-                reset();
-                mPointerId = pointer_id;
-                mVelocityTracker.clear();
-            }
-        }
-        
+
         public void recycle() {
             if (mVelocityTracker != null) {
                 mVelocityTracker.recycle();
@@ -419,24 +414,49 @@ public class ScreenView extends ViewGroup {
             }
             reset();
         }
+
+        public void init(int paramInt) {
+            if (mVelocityTracker == null) {
+                mVelocityTracker = VelocityTracker.obtain();
+            }
+            mVelocityTracker.clear();
+            reset();
+            mPointerId = paramInt;
+        }
+        
+        private GestureVelocityTracker()        {
+            mPointerId = -1;
+            mStartX = -1F;
+            mFoldX = -1F;
+            mPrevX = -1F;
+        }
+
     }
 
-    /*
-     * 常量定义
-     */
-    private static final String TAG = "ScreenView";
+    /*********** 常量  *********/
+    private static final Boolean LOGD = true;
+    private static final String TAG = "MKHome.ScreenView";
 
+    protected static final int INVALID_SCREEN = -1; 
+    
     private static final Boolean BOOL_ALWAYS = true;
     private static final Boolean BOOL_CLIP_TO_PADDINGS = true;
-    private static final float BASELINE_FLING_VELOCITY = 2500F;
     private static final float DEFAULT_OVER_SHOOT_TENSION = 1.3F;
-    private static final int DEFAULT_SCREEN_SNAP_DURATION = 300;
     private static final float FLING_VELOCITY_INFLUENCE = 0.4F;
-    protected static final int INDICATOR_MEASURE_SPEC = MeasureSpec.makeMeasureSpec(0, 0);
+    private static final float BASELINE_FLING_VELOCITY = 2500.0f;
     private static final int INVALID_POINTER = -1;
-    protected static final int INVALID_SCREEN = -1; 
     protected static final int MINIMAL_SLIDE_BAR_POINT_WIDTH = 48;
     private static final float NANOTIME_DIV = 1000000000.0F+009F;
+    
+    // mScroll滑动的动画时间
+    private static final int DEFAULT_SCREEN_SNAP_DURATION = 300;
+    private static final int MAX_SCREEN_SNAP_DURATION = 550;
+    private static final int SLOW_SCREEN_SNAP_DURATION = 750;
+    
+    protected static final int INDICATOR_MEASURE_SPEC = 
+            MeasureSpec.makeMeasureSpec(MeasureSpec.UNSPECIFIED, MeasureSpec.UNSPECIFIED);
+    
+    /*********** 状态  *********/
     /*
      * 触摸的四个状态
      */
@@ -467,6 +487,10 @@ public class ScreenView extends ViewGroup {
     public static final int SCREEN_TRANSITION_TYPE_CUSTOM = 9;
     
     /*********** 内容  *********/
+    
+    // 屏幕滚动显示
+    protected Scroller mScroller = null;
+    
     // 指示器
     protected static final LinearLayout.LayoutParams SEEK_POINT_LAYOUT_PARAMS = 
             new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT, 1F);
@@ -494,7 +518,6 @@ public class ScreenView extends ViewGroup {
     private int mScreenCounter = 0;
     
     private int mTouchState = TOUCH_STATE_REST;
-    protected Scroller mScroller = null;
     private int mRight = 0;
     private int mLeft = 0;
     private float mOvershootTension = DEFAULT_OVER_SHOOT_TENSION;
@@ -751,13 +774,17 @@ public class ScreenView extends ViewGroup {
                         break;
                     }
                     int point_id = motionEvent.findPointerIndex(mActivePointerId);
-                    f = motionEvent.getX(point_id);
-                    float f1 = mLastMotionX - f;
-                    mLastMotionX = f;
-                    if (f1 == 0) {
+                    if (point_id == INVALID_POINTER) {
+                        setTouchState(motionEvent, TOUCH_STATE_SCROLLING);
+                        point_id = motionEvent.findPointerIndex(mActivePointerId);
+                    }
+                    float x = motionEvent.getX(point_id);
+                    float dx = mLastMotionX - x;
+                    mLastMotionX = x;
+                    if (dx == 0) {
                         awakenScrollBars();
                     }else {
-                        scrollTo(Math.round(f1 + mTouchX), 0);
+                        scrollTo(Math.round(dx + mTouchX), 0);
                     }
                 }   
                 break;
@@ -990,7 +1017,7 @@ public class ScreenView extends ViewGroup {
         setAlwaysDrawnWithCacheEnabled(BOOL_ALWAYS);
         setClipToPadding(BOOL_CLIP_TO_PADDINGS);
         
-        // 滑动条
+        // 滑动效果
         mScrollInterpolator = new ScreenViewOverShootInterpolator();
         mScroller = new Scroller(mContext, mScrollInterpolator);
         
@@ -1025,7 +1052,7 @@ public class ScreenView extends ViewGroup {
         }
     }
     
-    /*
+    /**
      * 手势判断，移动足够距离
      * 根据当前X, Y坐标与最后坐标X,Y的距离来判断
      */
@@ -1042,30 +1069,30 @@ public class ScreenView extends ViewGroup {
     /*
      * 根据传递的速率滑动页面
      */
-    private void snapByVelocity(int i) {
+    private void snapByVelocity(int pointerId) {
         if (mChildScreenWidth > 0 && getCurrentScreen() != null) {
-            int j = (int)mGestureVelocityTracker.getXVelocity(1000, mMaximumVelocity, i);
-            int k = mGestureVelocityTracker.getFlingDirection(Math.abs(j));
-            if (k != 1 || mCurrentScreen <= 0) {
-                if (k != 2 || mCurrentScreen >= getScreenCount() - 1) {
-                    if (k != 3) {
+            int xVel = (int)mGestureVelocityTracker.getXVelocity(1000, mMaximumVelocity, pointerId);
+            int dir = mGestureVelocityTracker.getFlingDirection(Math.abs(xVel));
+            if (dir != 1 || mCurrentScreen <= 0) {
+                if (dir != 2 || mCurrentScreen >= getScreenCount() - 1) {
+                    if (dir != 3) {
                         int visibleRang;
-                        j = mChildScreenWidth;
+                        int sw = mChildScreenWidth;
                         if (!mScrollWholeScreen) {
                             visibleRang = 1;
                         }else {
                             visibleRang = mVisibleRange;
                         }
-                        j *= visibleRang;
-                        snapToScreen((mScrollX + (j >> 1)) / mChildScreenWidth, 0, true);
+                        sw *= visibleRang;
+                        snapToScreen((mScrollX + (sw >> 1)) / mChildScreenWidth, 0, true);
                     }else {
-                        snapToScreen(mCurrentScreen + mVisibleRange, j, true);
+                        snapToScreen(mCurrentScreen, xVel, true);
                     }
                 }else {
-                    snapToScreen(mCurrentScreen + mVisibleRange, j, true);
+                    snapToScreen(mCurrentScreen + mVisibleRange, xVel, true);
                 }
             }else {
-                snapToScreen(mCurrentScreen - mVisibleRange, j, true);
+                snapToScreen(mCurrentScreen - mVisibleRange, xVel, true);
             }
         }
     }
@@ -1313,11 +1340,11 @@ public class ScreenView extends ViewGroup {
     protected boolean getChildStaticTransformationByScreen(View view, Transformation transformation, float f) {
         return false;
     }
-
-    /*
-     * 移动屏幕
+    
+    /**
+     * 功能： 移动屏幕
      */
-    private void snapToScreen(int screen, int j, boolean bEffect) {
+    protected void snapToScreen(int screen, int velocity, boolean bEffect) {
         if (mScreenWidth > 0) {
             if (!mScrollWholeScreen) {
                 mNextScreen = Math.max(0, Math.min(screen, getScreenCount() - mVisibleRange));
@@ -1326,30 +1353,31 @@ public class ScreenView extends ViewGroup {
                 mNextScreen = mNextScreen - (mNextScreen % mVisibleRange);
             }
             
-            int k = Math.max(1, Math.abs(mNextScreen - mCurrentScreen));
+            int screenDelta = Math.max(1, Math.abs(mNextScreen - mCurrentScreen));
             if (!mScroller.isFinished()) {
                 mScroller.abortAnimation();
             }
             
-            int j1 = Math.abs(j);
+            velocity = Math.abs(velocity);
             // 如果不需要特效，将动画变化率设置为0.0F，否则则按算法计算
             if (!bEffect) {
                 mScrollInterpolator.disableSettle();
             }else {
-                mScrollInterpolator.setDistance(k, j1);
+                mScrollInterpolator.setDistance(screenDelta, velocity);
             }
             
-            int l = mNextScreen * mChildScreenWidth - mScrollOffset - mScrollX;
-            if (l != 0) {
-                int i1 = (Math.abs(l) * mScreenSnapDuration) / mScreenWidth;
-                if (j1 > 0) {
-                    i1 += (int)(FLING_VELOCITY_INFLUENCE * ((float)i1 / ((float)j1 / BASELINE_FLING_VELOCITY)));
+            // 计算出mScroller需要移动的距离
+            int distance = mNextScreen * mChildScreenWidth - mScrollOffset - mScrollX;
+            if (distance != 0) {
+                int duration = (Math.abs(distance) * mScreenSnapDuration) / mScreenWidth;
+                if (velocity > 0) {
+                    duration += (int)(FLING_VELOCITY_INFLUENCE * ((float)duration / ((float)velocity / BASELINE_FLING_VELOCITY)));
                 }
-                i1 = Math.max(mScreenSnapDuration, i1);
-                if (k <= 1) {
-                    i1 = Math.min(i1, 2 * mScreenSnapDuration);
+                duration = Math.max(mScreenSnapDuration, duration);
+                if (screenDelta <= 1) {
+                    duration = Math.min(duration, 2 * mScreenSnapDuration);
                 }
-                mScroller.startScroll(mScrollX, 0, l, 0, i1);
+                mScroller.startScroll(mScrollX, 0, distance, 0, duration);
                 invalidate();
             }
         }
@@ -1360,20 +1388,89 @@ public class ScreenView extends ViewGroup {
         snapToScreen(screen, 0, false);
     }
 
+    /**
+     * 计算滚动的位置
+     */
+    @Override
+    public void computeScroll() {
+        isFromcomputeScroll = true;
+        // 返回值为boolean，true说明滚动尚未完成，false说明滚动已经完成。
+        // 这是一个很重要的方法，通常放在View.computeScroll()中，用来判断是否滚动是否结束。  
+        if (!mScroller.computeScrollOffset()) {
+            if (LOGD) {
+                Log.d(TAG, "mScroller finished!" );
+            }
+            
+            // 如果处于触摸滚动状态，则刷新
+            if (mNextScreen == INVALID_SCREEN 
+                && mTouchState == TOUCH_STATE_SCROLLING) {
+                float now = (float)System.nanoTime() / NANOTIME_DIV;
+                float e = (float)Math.exp((now - mSmoothingTime) / SMOOTHING_CONSTANT);
+                float dx = mTouchX - (float)mScrollX;
+                mScrollX = (int)((float)mScrollX + dx * e);
+                mSmoothingTime = now;
+                if (LOGD) {
+                    Log.d(TAG, "now : " + now + "mScrollX : " + mScrollX + "dx :" + dx);
+                }
+                if (dx > 1.f || dx < -1.f) {
+                    postInvalidate();
+                }
+            }else {
+                if (LOGD) {
+                    Log.d(TAG, "mNextScreen : " + mNextScreen);
+                }
+                setCurrentScreenInner(Math.max(0, Math.min(mNextScreen, (getScreenCount() - 1))));
+                mNextScreen = INVALID_SCREEN;
+            }
+        } else {
+            // 当触摸ACTION_UP事件触发时，运行至此，让页面随着回到指定位置
+            if (LOGD) {
+                Log.d(TAG, "mScroller unfinished!" );
+            }
+            int x = mScroller.getCurrX();
+            mScrollX = x;
+            mTouchX = x;
+            if (LOGD) {
+                Log.d(TAG, "x : " + x);
+            }
+            mSmoothingTime = (float)System.nanoTime() / NANOTIME_DIV;
+            mScrollY = mScroller.getCurrY();
+            scrollTo(mScrollX, mScrollY);
+        }
+        updateIndicatorPositions(mScrollX);
+        updateSlidePointPosition(mScrollX);
+        updateArrowIndicatorResource(mScrollX);
+        isFromcomputeScroll = false;
+    }
+    
+    /**
+     * 描述： 滚动到指定的位置
+     * 缺失功能： 循环滚动页面
+     * @param cur_screen
+     */
+    @Override
     public void scrollTo(int x, int y){
         mTouchX = Math.max(mScrollLeftBound, Math.min(x, mScrollRightBound));
         mSmoothingTime = ((float)System.nanoTime()/NANOTIME_DIV);
+        super.scrollTo((int)mTouchX, y);
     }
     
+    /**
+     * 描述： 滚动到指定的屏幕
+     * @param cur_screen
+     */
     public void scrollToScreen(int cur_screen) {
         if (mScrollWholeScreen) {
             cur_screen -= cur_screen % mVisibleRange;
         }
         measure(mWidthMeasureSpec, mHeightMeasureSpec);
         scrollTo(cur_screen * mChildScreenWidth - mScrollOffset, 0);
-        
     }
     
+    /**
+     * 描述：设置允许长按
+     * @param cur_screen
+     */
     public void setAllowLongPress(boolean bFlag) {
         mAllowLongPress = bFlag;
     }
@@ -1671,17 +1768,22 @@ public class ScreenView extends ViewGroup {
         mTouchSlop = slop;
     }
     
+    /**
+     * 功能： 设置触摸的状态
+     * @param motionEvent
+     * @param state
+     */
     protected void setTouchState(MotionEvent motionEvent, int state) {
         mTouchState = state;
         ViewParent viewParent = getParent();
         boolean bFlag;
-        if (mTouchState == 0) {
+        if (mTouchState == TOUCH_STATE_REST) {
             bFlag = false;
         }else {
             bFlag = true;
         }
         viewParent.requestDisallowInterceptTouchEvent(bFlag);
-        if (mTouchState != 0) {
+        if (mTouchState != TOUCH_STATE_REST) {
             if (motionEvent != null) {
                 mActivePointerId = motionEvent.getPointerId(0);
             }
@@ -1692,7 +1794,7 @@ public class ScreenView extends ViewGroup {
                     view.cancelLongPress();
                 }
             }
-            if (mTouchState == 1) {
+            if (mTouchState == TOUCH_STATE_SCROLLING) {
                 mLastMotionX = motionEvent.getX();
                 mTouchX = mScrollX;
                 mSmoothingTime = (float)System.nanoTime() / NANOTIME_DIV;
@@ -1720,41 +1822,6 @@ public class ScreenView extends ViewGroup {
 
     public boolean allowLongPress() {
         return mAllowLongPress;
-    }
-    
-    /*
-     * 计算位置，在屏幕显示之前完成
-     */
-    public void computeScroll() {
-        isFromcomputeScroll = true;
-        if (!mScroller.computeScrollOffset()) {
-            if (mNextScreen == INVALID_SCREEN) {
-                if (mTouchState == TOUCH_STATE_SCROLLING) {
-                    float f1 = (float)System.nanoTime() / NANOTIME_DIV;
-                    float f2 = (float)Math.exp((f1 - mSmoothingTime) / SMOOTHING_CONSTANT);
-                    float f = mTouchX - (float)mScrollX;
-                    mScrollX = (int)((float)mScrollX + f * f2);
-                    mSmoothingTime = f1;
-                    if (f > 1F || f < -1F) {
-                        postInvalidate();
-                    }
-                }
-            }else {
-                setCurrentScreenInner(Math.max(0, Math.min(mNextScreen, (getScreenCount() - 1))));
-                mNextScreen = INVALID_SCREEN;
-            }
-        }else {
-            int i = mScroller.getCurrX();
-            mScrollX = i;
-            mTouchX = i;
-            mSmoothingTime = (float)System.nanoTime() / NANOTIME_DIV;
-            mScrollY = mScroller.getCurrY();
-            postInvalidate();
-        }
-        updateIndicatorPositions(mScrollX);
-        updateSlidePointPosition(mScrollX);
-        updateArrowIndicatorResource(mScrollX);
-        isFromcomputeScroll = false;
     }
     
     public boolean dispatchUnhandledMove(View view, int gravity) {

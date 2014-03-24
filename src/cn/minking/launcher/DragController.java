@@ -135,18 +135,7 @@ public class DragController {
         mDragViewAlpha = context.getResources().getInteger(R.integer.config_dragViewAlpha);
         recordScreenSize();
     }
-    
-    private static int clamp(int i, int j, int k) {
-        if (i >= j){
-            if (i < k) {
-                j = i;
-            } else {
-                j = k - 1;
-            }
-        }
-        return j;
-    }
-    
+        
     private Bitmap createDragOutline(Bitmap bitmap, int i) {
         int j = mLauncher.getResources().getColor(R.color.dragging_outline);
         Bitmap bitmap1 = Bitmap.createBitmap(bitmap);
@@ -391,24 +380,36 @@ public class DragController {
         return flag;
     }
 
+
+    private static int clamp(int rawX, int base, int metrics) {
+        if (rawX >= base){
+            if (rawX < metrics) {
+                base = rawX;
+            } else {
+                base = metrics - 1;
+            }
+        }
+        return base;
+    }
+    
     public boolean onInterceptTouchEvent(MotionEvent motionevent) {
-        int j = motionevent.getAction();
-        int i = clamp((int)motionevent.getRawX(), 0, mDisplayMetrics.widthPixels);
-        int k = clamp((int)motionevent.getRawY(), 0, mDisplayMetrics.heightPixels);
-        switch (j) {
+        int x = clamp((int)motionevent.getRawX(), 0, mDisplayMetrics.widthPixels);
+        int y = clamp((int)motionevent.getRawY(), 0, mDisplayMetrics.heightPixels);
+        switch (motionevent.getAction()) {
         case MotionEvent.ACTION_MOVE: // '\002'
         default:
             break;
 
         case MotionEvent.ACTION_DOWN: // '\0'
-            mMotionDownX = i;
-            mMotionDownY = k;
+            mMotionDownX = x;
+            mMotionDownY = y;
             mLastDropTarget = null;
             break;
 
         case MotionEvent.ACTION_UP: // '\001'
-            if (mDragging)
-                drop(i, k);
+            if (mDragging){
+                drop(x, y);
+            }
             endDrag();
             break;
 
@@ -419,22 +420,26 @@ public class DragController {
         return mDragging;
     }
 
+    /**
+     * 功能： 处理触摸事件
+     * @param motionevent
+     * @return
+     */
     public boolean onTouchEvent(MotionEvent motionevent) {
         boolean flag = false;
         View view = mScrollView;
         if (mDragging) {
-            int i = motionevent.getAction();
-            int k = clamp((int)motionevent.getRawX(), 0, mDisplayMetrics.widthPixels);
-            int j = clamp((int)motionevent.getRawY(), 0, mDisplayMetrics.heightPixels);
-            switch (i & 0xff) {
-            case 4: // '\004'
+            int x = clamp((int)motionevent.getRawX(), 0, mDisplayMetrics.widthPixels);
+            int y = clamp((int)motionevent.getRawY(), 0, mDisplayMetrics.heightPixels);
+            switch (motionevent.getAction() & 0xff) {
+            case MotionEvent.ACTION_OUTSIDE: // '\004'
             default:
                 break;
 
             case MotionEvent.ACTION_DOWN: // '\0'
                 mMotionDownX = ((flag) ? 1 : 0);
-                mMotionDownY = j;
-                if (k >= mScrollZone && k <= view.getWidth() - mScrollZone) {
+                mMotionDownY = y;
+                if (x >= mScrollZone && x <= view.getWidth() - mScrollZone) {
                     mScrollState = 0;
                 } else {
                     mScrollState = 1;
@@ -444,16 +449,16 @@ public class DragController {
                 break;
 
             case MotionEvent.ACTION_UP: // '\001'
-                handleMoveEvent(k, j, motionevent);
+                handleMoveEvent(x, y, motionevent);
                 cancelScroll();
                 if (mDragging){
-                    drop(k, j);
+                    drop(x, y);
                 }
                 endDrag();
                 break;
 
             case MotionEvent.ACTION_MOVE: // '\002'
-                handleMoveEvent(k, j, motionevent);
+                handleMoveEvent(x, y, motionevent);
                 break;
 
             case MotionEvent.ACTION_CANCEL: // '\003'
@@ -461,7 +466,7 @@ public class DragController {
                 break;
 
             case MotionEvent.ACTION_POINTER_DOWN: // '\005'
-                mSecondaryPointerId = motionevent.getPointerId((0xff00 & i) >> 8);
+                mSecondaryPointerId = motionevent.getPointerId((0xff00 & motionevent.getAction()) >> 8);
                 mDragScroller.onSecondaryPointerDown(motionevent, mSecondaryPointerId);
                 break;
 
