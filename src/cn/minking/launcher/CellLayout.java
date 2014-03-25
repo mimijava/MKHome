@@ -973,13 +973,16 @@ public class CellLayout extends ViewGroup
         
         int action = ev.getAction();
         
-        if (action == MotionEvent.ACTION_UP) {
-            mCellInfo.cell = null;
-            mCellInfo.cellX = -1;
-            mCellInfo.cellY = -1;
-            mCellInfo.spanX = 0;
-            mCellInfo.spanY = 0;
-            mLastDownOnOccupiedCell = false;
+        if (action != MotionEvent.ACTION_DOWN) {
+            if (action == MotionEvent.ACTION_UP) {
+                mCellInfo.cell = null;
+                mCellInfo.cellX = -1;
+                mCellInfo.cellY = -1;
+                mCellInfo.spanX = 0;
+                mCellInfo.spanY = 0;
+
+                mLastDownOnOccupiedCell = false;
+            }
             if (mOnLongClickAgent.onInterceptTouchEvent(ev)){
                 flag = true;
             }
@@ -1039,7 +1042,9 @@ public class CellLayout extends ViewGroup
             duration = 200L;
         }
         mOnLongClickAgent.setEditingTimeout(duration);
-        
+        if (mOnLongClickAgent.onInterceptTouchEvent(ev)){
+            flag = true;
+        }
         return flag;
     }
 

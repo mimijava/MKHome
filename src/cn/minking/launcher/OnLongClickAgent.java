@@ -32,8 +32,9 @@ public class OnLongClickAgent{
                     && mClientView.hasWindowFocus() 
                     && mClientView.getParent() != null 
                     && zOriginalVersionTag == mVersionTagGenerator.getVersionTag()) {
-                if (mOnLongClickListener != null)
+                if (mOnLongClickListener != null){
                     mOnLongClickListener.onLongClick(mClientView);
+                }
                 mHasPerformedLongPress = true;
                 mIsLongPressCheckPending = false;
             }
@@ -67,7 +68,7 @@ public class OnLongClickAgent{
         
         if (!mHasPerformedLongPress) {
             if (mIsLongPressCheckPending)
-                switch (0xff & motionevent.getAction()) {
+                switch (MotionEvent.ACTION_MASK & motionevent.getAction()) {
                 case MotionEvent.ACTION_MOVE: // '\002'
                     if (Math.abs(mDonwX - motionevent.getX()) < (float)MOVE_THRESHOLD 
                             && Math.abs(mDonwY - motionevent.getY()) < (float)MOVE_THRESHOLD)
@@ -88,16 +89,16 @@ public class OnLongClickAgent{
     
     public boolean onInterceptTouchEvent(MotionEvent motionevent) {
         boolean flag = false;
-        int i = 0xff & motionevent.getAction();
+        int action = MotionEvent.ACTION_MASK & motionevent.getAction();
         if (mHasPerformedLongPress) {
             mHasPerformedLongPress = false;
-            if (i != MotionEvent.ACTION_DOWN){
+            if (action != MotionEvent.ACTION_DOWN){
                 flag = true;
                 return flag;
             }
         }
         
-        switch (i) {
+        switch (action) {
         default:
             flag = handleTouchEvent(motionevent);
             break;
@@ -119,12 +120,13 @@ public class OnLongClickAgent{
         mPendingCheckForLongPress.rememberVersionTag();
         ViewGroup viewgroup = mClientView;
         CheckForLongPress checkforlongpress = mPendingCheckForLongPress;
-        long l;
-        if (!mLauncher.isInEditing())
-            l = mNormalTimeout;
-        else
-            l = mEditingTimeout;
-        viewgroup.postDelayed(checkforlongpress, l);
+        long duration;
+        if (!mLauncher.isInEditing()) {
+            duration = mNormalTimeout;
+        } else {
+            duration = mEditingTimeout;
+        }
+        viewgroup.postDelayed(checkforlongpress, duration);
         mIsLongPressCheckPending = true;
     }
 

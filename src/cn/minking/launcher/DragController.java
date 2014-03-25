@@ -12,6 +12,7 @@ package cn.minking.launcher;
 import java.util.ArrayList;
 import java.util.Iterator;
 
+import android.R.integer;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
@@ -68,16 +69,17 @@ public class DragController {
     
     static interface DragListener {
         public abstract void onDragEnd();
-        public abstract void onDragStart(DragSource dragsource, ItemInfo iteminfo, int i);
+        public abstract void onDragStart(DragSource dragsource, ItemInfo iteminfo, int dragAction);
     }
 
     /********** 常量  **********/
     // 滑动方向
-    public final static int DIRECTION_LEFT = 0;
-    public final static int DIRECTION_RIGHT = 1;
+    final public static int DIRECTION_LEFT = 0;
+    final public static int DIRECTION_RIGHT = 1;
     
-    public static int DRAG_ACTION_COPY = 1;
-    public static int DRAG_ACTION_MOVE = 0;
+    final public static int DRAG_ACTION_COPY = 1;
+    final public static int DRAG_ACTION_MOVE = 0;
+    final private static long VIBRATE_DURATION = 35L;
     
     /// M: 存储拖动目标
     private ArrayList<DropTarget> mDropTargets;
@@ -135,15 +137,21 @@ public class DragController {
         mDragViewAlpha = context.getResources().getInteger(R.integer.config_dragViewAlpha);
         recordScreenSize();
     }
-        
+    
+    /**
+     * 功能： 创建拖动视图的描边框
+     * @param bitmap
+     * @param i
+     * @return
+     */
     private Bitmap createDragOutline(Bitmap bitmap, int i) {
-        int j = mLauncher.getResources().getColor(R.color.dragging_outline);
-        Bitmap bitmap1 = Bitmap.createBitmap(bitmap);
+        int color = mLauncher.getResources().getColor(R.color.dragging_outline);
+        Bitmap viewRect = Bitmap.createBitmap(bitmap);
         Canvas canvas = mTmpCanvas;
-        canvas.setBitmap(bitmap1);
-        mOutlineHelper.applyMediumExpensiveOutlineWithBlur(bitmap1, canvas, j, j);
+        canvas.setBitmap(viewRect);
+        mOutlineHelper.applyMediumExpensiveOutlineWithBlur(viewRect, canvas, color, color);
         canvas.setBitmap(null);
-        return bitmap1;
+        return viewRect;
     }
 
     private Bitmap createViewBitmap(View view) {
@@ -217,9 +225,8 @@ public class DragController {
     private void endDrag() {
         if (mDragging){ 
             mDragging = false;
-            Iterator<DragListener> iterator = mListeners.iterator();
-            while (iterator.hasNext()) {
-                ((DragListener)iterator.next()).onDragEnd();
+            for (DragListener listener : mListeners) {
+                listener.onDragEnd();
             }
             if (mDragObject.dragView != null) {
                 mDragObject.dragView.remove();
@@ -521,102 +528,100 @@ public class DragController {
         mTouchTranslater = touchtranslator;
     }
     
-    public void startDrag(Bitmap bitmap, Bitmap bitmap1, 
-            int cx, int cy, DragSource dragsource, ItemInfo iteminfo, int k, 
-            Point point, Rect rect){
+    /**
+     * 功能： 开始拖动 
+     */
+    public void startDrag(Bitmap viewBitmap, Bitmap outlineBitmap, 
+            int cx, int cy, DragSource dragsource, ItemInfo itemInfo, int dragAction, 
+            Point dragOffset, Rect dragRegion){
         if (!mLauncher.isInEditing()){
             mLauncher.setEditingState(9);
         }
+        
+        // 如果有输入框，则关闭
         if (mInputMethodManager == null) {
-            mInputMethodManager = (InputMethodManager)mLauncher.getSystemService("input_method");
+            mInputMethodManager = (InputMethodManager)mLauncher.getSystemService(Context.INPUT_METHOD_SERVICE);
         }
         mInputMethodManager.hideSoftInputFromWindow(mWindowToken, 0);
         
-        Iterator<DragListener> iterator = mListeners.iterator();
-        while (iterator.hasNext()) {
-            ((DragListener)iterator.next()).onDragStart(dragsource, iteminfo, k);
+        for (DragListener listener : mListeners) {
+            listener.onDragStart(dragsource, itemInfo, dragAction);
         }
         
-        float x = mMotionDownX;
-        float y = mMotionDownY;
+        float motionDownX = mMotionDownX;
+        float motionDownY = mMotionDownY;
         if (mTouchTranslater != null) {
             mTransloateXY[0] = mMotionDownX;
             mTransloateXY[1] = mMotionDownY;
             mTouchTranslater.translateTouch(mTransloateXY);
-            x = mTransloateXY[0];
-            y = mTransloateXY[1];
+            motionDownX = mTransloateXY[0];
+            motionDownY = mTransloateXY[1];
         }
         
-        int i1 = (int)x - cx;
-        int j1 = (int)y - cy;
-        int left;
-        if (rect != null) {
-            left = rect.left;
-        } else {
-            left = 0;
-        }
-        int top;
-        if (rect != null){
-            top = rect.top;
-        } else {
-            top = 0;
-        }
+        int registrationX = (int)motionDownX - cx;
+        int registrationY = (int)motionDownY - cy;
+        
+        final int dragRegionLeft = dragRegion == null ? 0 : dragRegion.left;
+        final int dragRegionTop = dragRegion == null ? 0 : dragRegion.top;
+        
         mDragging = true;
+        
         mDragObject = new DropTarget.DragObject();
         mDragObject.dragComplete = false;
-        mDragObject.xOffset = (int)(x - (float)(cx + left));
-        mDragObject.yOffset = (int)(y - (float)(cy + top));
+        mDragObject.xOffset = (int)(motionDownX - (float)(cx + dragRegionLeft));
+        mDragObject.yOffset = (int)(motionDownY - (float)(cy + dragRegionTop));
         mDragObject.dragSource = dragsource;
-        mDragObject.dragInfo = iteminfo;
-        mDragObject.outline = bitmap1;
-        mVibrator.vibrate(35L);
+        mDragObject.dragInfo = itemInfo;
+        mDragObject.outline = outlineBitmap;
+        
+        mVibrator.vibrate(VIBRATE_DURATION);
+        
         DropTarget.DragObject dragobject = mDragObject;
-        DragView dragView = new DragView(mLauncher, bitmap, i1, j1, 0, 0, bitmap.getWidth(), bitmap.getHeight());
+        DragView dragView = new DragView(mLauncher, viewBitmap, registrationX, 
+                registrationY, 0, 0, viewBitmap.getWidth(), viewBitmap.getHeight());
         dragobject.dragView = dragView;
         dragView.setAlpha((float)mDragViewAlpha / 255F);
-        if (point != null) {
-            dragView.setDragVisualizeOffset(new Point(point));
+        if (dragOffset != null) {
+            dragView.setDragVisualizeOffset(new Point(dragOffset));
         }
-        if (rect != null) {
-            dragView.setDragRegion(new Rect(rect));
+        if (dragRegion != null) {
+            dragView.setDragRegion(new Rect(dragRegion));
         }
         dragView.show(mMotionDownX, mMotionDownY);
         handleMoveEvent(mMotionDownX, mMotionDownY, null);
-        
-        return;
     }
     
     public void startDrag(Drawable drawable, int i, int j,
             DragSource dragsource, ItemInfo iteminfo, int k, Rect rect){
         Bitmap bitmap = renderDrawableToBitmap(drawable);
         if (bitmap != null) {
-            Bitmap bitmap1 = createDragOutline(bitmap, HolographicOutlineHelper.MAX_OUTER_BLUR_RADIUS);
-            if (bitmap1 != null){
-                startDrag(bitmap, bitmap1, i, j, dragsource, iteminfo, k, null, rect);
+            Bitmap outlineBitmap = createDragOutline(bitmap, HolographicOutlineHelper.MAX_OUTER_BLUR_RADIUS);
+            if (outlineBitmap != null){
+                startDrag(bitmap, outlineBitmap, i, j, dragsource, iteminfo, k, null, rect);
             }
         }
     }
     
-    public void startDrag(View view, DragSource dragsource, ItemInfo iteminfo, int i){
-        startDrag(view, true, dragsource, iteminfo, i, null);
+    public void startDrag(View view, DragSource dragsource, ItemInfo iteminfo, int action){
+        startDrag(view, true, dragsource, iteminfo, action, null);
     }
     
-    public void startDrag(View view, boolean flag, DragSource dragsource, ItemInfo iteminfo, int i, Rect rect){
+    public void startDrag(View view, boolean bOutline, DragSource dragsource, ItemInfo iteminfo, int action, Rect rect){
         if (!mDragging) {
-            Bitmap bitmap = createViewBitmap(view);
-            if (bitmap != null) {
-                Bitmap bitmap1;
-                if (!flag) {
-                    bitmap1 = null;
-                } else {
-                    bitmap1 = createDragOutline(bitmap, HolographicOutlineHelper.MAX_OUTER_BLUR_RADIUS);
+            // 获取对象的位图
+            Bitmap viewBitmap = createViewBitmap(view);
+            if (viewBitmap != null) {
+                // 是否需要显示描边框
+                Bitmap outlineBitmap = null;
+                if (bOutline) {
+                    outlineBitmap = createDragOutline(viewBitmap, HolographicOutlineHelper.MAX_OUTER_BLUR_RADIUS);
                 }
-                if (!flag || bitmap1 != null) {
+                if (!bOutline || outlineBitmap != null) {
                     int ai[] = mCoordinatesTemp;
                     mLauncher.getDragLayer().getLocationInDragLayer(view, ai);
-                    startDrag(bitmap, bitmap1, ai[0], ai[1], dragsource, iteminfo, i, null, rect);
-                    bitmap.recycle();
-                    if (i == DRAG_ACTION_MOVE) {
+                    startDrag(viewBitmap, outlineBitmap, ai[0], ai[1], dragsource, iteminfo, action, null, rect);
+                    viewBitmap.recycle();
+                    if (action == DRAG_ACTION_MOVE) {
                         view.setVisibility(View.GONE);
                     }
                 }

@@ -1,5 +1,14 @@
 package cn.minking.launcher;
-
+/**
+ * 作者：      minking
+ * 文件名称:    ResConfig.java
+ * 创建时间：    2013-12-28
+ * 描述：      桌面的一些配置
+ * 更新内容
+ * ====================================================================================
+ * 
+ * ====================================================================================
+ */
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.res.Resources;
@@ -23,31 +32,35 @@ public class ResConfig {
     public static void Init(Context context) {
         int i = 0;
         Resources resources = context.getResources();
-        mIconWidth = resources.getDimensionPixelSize(R.dimen.config_icon_width);
-        mIconHeight = resources.getDimensionPixelSize(R.dimen.config_icon_height);
+        
+        // 横纵的单元格
         mCellCountX = Math.max(2, resources.getInteger(R.integer.config_cell_count_x));
         mCellCountY = Math.max(2, resources.getInteger(R.integer.config_cell_count_y));
+        
+        // 图标的宽高
+        mIconWidth = resources.getDimensionPixelSize(R.dimen.config_icon_width);
+        mIconHeight = resources.getDimensionPixelSize(R.dimen.config_icon_height);
         SharedPreferences sharedPreferences = PreferenceManager.getDefaultSharedPreferences(context);
         
-        if (mCellCountX != 3 || mCellCountY != 3)
-        {
+        if (mCellCountX != 3 || mCellCountY != 3) {
             String s = sharedPreferences.getString("pref_key_cell_layout_size", null);
-            if (s != null)
-            {
+            if (s != null) {
                 int index = s.indexOf('x');
-                if (index != -1)
-                {
+                if (index != -1) {
                     mCellCountX = Integer.parseInt(s.substring(0, i));
                     mCellCountY = Integer.parseInt(s.substring(i + 1, s.length()));
-                    if (mCellCountX < 2 || mCellCountY < 2)
-                    {
+                    if (mCellCountX < 2 || mCellCountY < 2) {
                         mCellCountY = 4;
                         mCellCountX = 4;
                     }
                 }
             }
         }
+        
+        // HOT SEAT 总个数
         mHotseatCount = mCellCountX + mCellCountX / 2;
+        
+        // 整个桌面的布局 4x5或4*4
         String cellSize = getCellSizeVal(mCellCountX, mCellCountY);
         mLauncherDatabaseName = getDatabaseNameBySuffix(cellSize);
         StringBuilder stringbuilder = (new StringBuilder()).append("default_workspace");
@@ -56,10 +69,10 @@ public class ResConfig {
             cellSize = "";
         }
         
-        
         // 默认WORKSPACE 的XML名称
         mDefaultWorkspaceName = stringbuilder.append(cellSize).toString();
         
+        // 字定义的布局可以存放在/data/media/customized目录中
         mCustomizedDefaultWorkspacePath = (new StringBuilder()).append("/data/media/customized/")
                 .append(mDefaultWorkspaceName).append(".xml").toString();
         
@@ -104,10 +117,11 @@ public class ResConfig {
         return mLauncherDatabaseName;
     }
 
-    public static final String getDatabaseNameBySuffix(String s){
-        if ("4x4".equals(s))
-            s = "";
-        return (new StringBuilder()).append("launcher").append(s).append(".db").toString();
+    public static final String getDatabaseNameBySuffix(String size){
+        if ("4x4".equals(size)){
+            size = "";
+        }
+        return (new StringBuilder()).append("launcher").append(size).append(".db").toString();
     }
 
     public static final int getDefaultWorkspaceXmlId(){
@@ -118,20 +132,20 @@ public class ResConfig {
         return mHotseatCount;
     }
 
+    public static final int getIconWidth(){
+        return mIconWidth;
+    }
+    
     public static final int getIconHeight(){
         return mIconHeight;
     }
 
-    public static final int getIconWidth(){
-        return mIconWidth;
+    public static final int getWidgetCellMinWidth(){
+        return mWidgetCellMinWidth;
     }
 
     public static final int getWidgetCellMinHeight(){
         return mWidgetCellMinHeight;
-    }
-
-    public static final int getWidgetCellMinWidth(){
-        return mWidgetCellMinWidth;
     }
 
     public static final int getWidgetSpanX(int i){

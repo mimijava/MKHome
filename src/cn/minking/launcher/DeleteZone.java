@@ -30,7 +30,7 @@ import android.widget.ImageView;
 import android.widget.TextView;
 
 public class DeleteZone extends FrameLayout 
-    implements Animation.AnimationListener{
+    implements Animation.AnimationListener, DragController.DragListener, DropTarget{
     private TextView mEditingTips;
     private boolean mErrorShowing;
     private Animation mFadeIn;

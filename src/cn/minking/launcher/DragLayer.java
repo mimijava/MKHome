@@ -30,6 +30,7 @@ import android.graphics.Region;
 import android.os.RemoteException;
 import android.preference.PreferenceManager;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.widget.FrameLayout;
 import android.view.*;
 import android.view.animation.DecelerateInterpolator;
@@ -48,6 +49,7 @@ public class DragLayer extends FrameLayout {
         }
     }
     
+    private static final Boolean LOGD = true;
     private static final String TAG = "MKHome.DragLayer";
     
     // DragLayer应用与Launcher及使用的CONTROLLER
@@ -84,7 +86,7 @@ public class DragLayer extends FrameLayout {
     private int mDropViewPos[];
     private float mDropViewScale;
     private ValueAnimator mFadeOutAnim;
-    private float mOldPositions[];
+    private TouchHandle mTouchHandle;
     private final ArrayList<AppWidgetResizeFrame> mResizeFrames = new ArrayList();
     private int mScaledUpsideScreenOutTouch;
     private int mTmpPos[];
@@ -399,11 +401,15 @@ public class DragLayer extends FrameLayout {
      */
     @Override
     public void requestDisallowInterceptTouchEvent(boolean disallowIntercept) {
-        if (mOldPositions == null || !disallowIntercept){
+        if (mTouchHandle == null || !disallowIntercept){
             super.requestDisallowInterceptTouchEvent(disallowIntercept);
         }
     }
 
+    /**
+     * 描述： Launcher 的层级结构为DragLayer->Screen->Workspace
+     * DragLayer为第一层，所以，针对所有的触摸操作
+     */
     @Override
     public boolean onInterceptTouchEvent(MotionEvent ev) {
         boolean flag = true;
@@ -415,31 +421,35 @@ public class DragLayer extends FrameLayout {
             
         // 判断是否为两指触摸
         if (ev.getPointerCount() != 2) {
-            if (mOldPositions != null) {
-                mOldPositions = null;
+            if (mTouchHandle != null) {
+                mTouchHandle = null;
             }
         } else {
-            if (mOldPositions != null) {
+            if (mTouchHandle != null) {
                 if (!mLauncher.isSceneAnimating()) {
+                    // 将新位置输入进触摸处理类
+                    mTouchHandle.setScaleMove(ev.getX(0), ev.getY(0), ev.getX(1), ev.getY(1));
+                    if (LOGD) {
+                        Log.e(TAG, "move 0 : " + mTouchHandle.getScaleType());
+                    }
                     if (mLauncher.isSceneShowing()) {
+                        // 在缩略图模式下，如果触摸手势为放大手势则退出
                         if (!mLauncher.isFolderShowing() 
-                            && (ev.getY(0) - mOldPositions[0] < (float)(-mScaledUpsideScreenOutTouch))
-                            && (ev.getY(1) - mOldPositions[1] < (float)(-mScaledUpsideScreenOutTouch))) {
-                            
-                            mOldPositions = null;
+                            && mTouchHandle.getScaleType() == TouchHandle.SCALE_TYPE_ENLARGE) {
+                            mTouchHandle = null;
                             mLauncher.hideSceneScreen();
                             return true;
                         }
                     } else {
+                        // 如果两指操作向内滑动距离超过一定距离则显示缩略图模式
                         if (!mLauncher.isInEditing() 
                             && !mLauncher.isFolderShowing() 
                             && !mLauncher.isPreviewShowing() 
-                            && (ev.getY(0) - mOldPositions[0] > (float)mScaledUpsideScreenOutTouch)
-                            && (ev.getY(1) - mOldPositions[1] > (float)mScaledUpsideScreenOutTouch)
+                            && (mTouchHandle.getScaleType() == TouchHandle.SCALE_TYPE_SMALL)
                             && mLauncher.getUpsideScene() != null 
                             && mLauncher.getWorkspace().isTouchStateNotInScroll()) {
                             
-                            mOldPositions = null;
+                            mTouchHandle = null;
                             mLauncher.getWorkspace().finishCurrentGesture();
                             mLauncher.showSceneScreen();
                             return true;
@@ -447,15 +457,15 @@ public class DragLayer extends FrameLayout {
                     }
                 }
             } else {
-                float af[] = new float[2];
-                af[0] = ev.getY(0);
-                af[1] = ev.getY(1);
-                mOldPositions = af;
+                // 得到两指触摸的Y轴坐标值
+                if (mTouchHandle == null) {
+                    mTouchHandle = new TouchHandle(ev.getX(0), ev.getY(0), ev.getX(1), ev.getY(1)); 
+                }
             }
         }
         clearAllResizeFrames();
-        flag = mDragController.onInterceptTouchEvent(ev);
-        return flag;
+
+        return mDragController.onInterceptTouchEvent(ev);
     }
 
     @Override

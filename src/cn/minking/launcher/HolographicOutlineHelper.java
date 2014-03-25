@@ -33,18 +33,18 @@ public class HolographicOutlineHelper {
         mAlphaClipPaint.setMaskFilter(tablemaskfilter);
     }
 
-    void applyExpensiveOutlineWithBlur(Bitmap bitmap, Canvas canvas, int i, int j, int k) {
-        applyExpensiveOutlineWithBlur(bitmap, canvas, i, j, mAlphaClipPaint, k);
+    void applyExpensiveOutlineWithBlur(Bitmap bitmap, Canvas canvas, int foreColor, int backColor, int mode) {
+        applyExpensiveOutlineWithBlur(bitmap, canvas, foreColor, backColor, mAlphaClipPaint, mode);
     }
 
-    void applyExpensiveOutlineWithBlur(Bitmap bitmap, Canvas canvas, int i, int j, Paint paint, int k) {
+    void applyExpensiveOutlineWithBlur(Bitmap bitmap, Canvas canvas, int foreColor, int backColor, Paint paint, int mode) {
         if (paint == null){
             paint = mAlphaClipPaint;
         }
         int ai[] = mTempOffset;
         Bitmap bitmap1 = bitmap.extractAlpha(paint, ai);
         BlurMaskFilter blurmaskfilter;
-        switch (k) {
+        switch (mode) {
         default:
             throw new RuntimeException("Invalid blur thickness");
 
@@ -63,7 +63,7 @@ public class HolographicOutlineHelper {
         mBlurPaint.setMaskFilter(blurmaskfilter);
         int ai2[] = new int[2];
         Bitmap bitmap3 = bitmap1.extractAlpha(mBlurPaint, ai2);
-        if (k != 2) {
+        if (mode != 2) {
             mBlurPaint.setMaskFilter(sThinOuterBlurMaskFilter);
         } else {
             mBlurPaint.setMaskFilter(sMediumOuterBlurMaskFilter);
@@ -73,7 +73,7 @@ public class HolographicOutlineHelper {
         canvas.setBitmap(bitmap1);
         canvas.drawColor(0xff000000, android.graphics.PorterDuff.Mode.SRC_OUT);
         BlurMaskFilter blurmaskfilter1;
-        switch (k) {
+        switch (mode) {
         default:
             throw new RuntimeException("Invalid blur thickness");
 
@@ -98,10 +98,10 @@ public class HolographicOutlineHelper {
         canvas.drawRect(0F, 0F, bitmap4.getWidth(), -ai3[1], mErasePaint);
         canvas.setBitmap(bitmap);
         canvas.drawColor(0, android.graphics.PorterDuff.Mode.CLEAR);
-        mHolographicPaint.setColor(i);
+        mHolographicPaint.setColor(foreColor);
         canvas.drawBitmap(bitmap4, ai3[0], ai3[1], mHolographicPaint);
         canvas.drawBitmap(bitmap3, ai2[0], ai2[1], mHolographicPaint);
-        mHolographicPaint.setColor(j);
+        mHolographicPaint.setColor(backColor);
         canvas.drawBitmap(bitmap2, ai1[0], ai1[1], mHolographicPaint);
         canvas.setBitmap(null);
         bitmap2.recycle();
@@ -110,20 +110,20 @@ public class HolographicOutlineHelper {
         bitmap1.recycle();
     }
 
-    void applyMediumExpensiveOutlineWithBlur(Bitmap bitmap, Canvas canvas, int i, int j) {
-        applyExpensiveOutlineWithBlur(bitmap, canvas, i, j, 1);
+    void applyMediumExpensiveOutlineWithBlur(Bitmap bitmap, Canvas canvas, int foreColor, int backColor) {
+        applyExpensiveOutlineWithBlur(bitmap, canvas, foreColor, backColor, 1);
     }
 
     static  {
         float f = LauncherApplication.getScreenDensity();
         MIN_OUTER_BLUR_RADIUS = (int)(f * 1F);
         MAX_OUTER_BLUR_RADIUS = (int)(f * 12F);
-        sExtraThickOuterBlurMaskFilter = new BlurMaskFilter(12F * f, android.graphics.BlurMaskFilter.Blur.OUTER);
-        sThickOuterBlurMaskFilter = new BlurMaskFilter(f * 6F, android.graphics.BlurMaskFilter.Blur.OUTER);
-        sMediumOuterBlurMaskFilter = new BlurMaskFilter(f * 2F, android.graphics.BlurMaskFilter.Blur.OUTER);
-        sThinOuterBlurMaskFilter = new BlurMaskFilter(f * 1F, android.graphics.BlurMaskFilter.Blur.OUTER);
-        sExtraThickInnerBlurMaskFilter = new BlurMaskFilter(f * 6F, android.graphics.BlurMaskFilter.Blur.NORMAL);
-        sThickInnerBlurMaskFilter = new BlurMaskFilter(4F * f, android.graphics.BlurMaskFilter.Blur.NORMAL);
-        sMediumInnerBlurMaskFilter = new BlurMaskFilter(f * 2F, android.graphics.BlurMaskFilter.Blur.NORMAL);
+        sExtraThickOuterBlurMaskFilter = new BlurMaskFilter(12F * f, BlurMaskFilter.Blur.OUTER);
+        sThickOuterBlurMaskFilter = new BlurMaskFilter(f * 6F, BlurMaskFilter.Blur.OUTER);
+        sMediumOuterBlurMaskFilter = new BlurMaskFilter(f * 2F, BlurMaskFilter.Blur.OUTER);
+        sThinOuterBlurMaskFilter = new BlurMaskFilter(f * 1F, BlurMaskFilter.Blur.OUTER);
+        sExtraThickInnerBlurMaskFilter = new BlurMaskFilter(f * 6F, BlurMaskFilter.Blur.NORMAL);
+        sThickInnerBlurMaskFilter = new BlurMaskFilter(4F * f, BlurMaskFilter.Blur.NORMAL);
+        sMediumInnerBlurMaskFilter = new BlurMaskFilter(f * 2F, BlurMaskFilter.Blur.NORMAL);
     }
 }

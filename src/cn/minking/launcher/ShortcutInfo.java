@@ -156,14 +156,16 @@ public class ShortcutInfo extends ItemInfo {
     public String toString(){
         return (new StringBuilder()).append("ShortcutInfo(title=").append(title).append(")").toString();
     }
+    
     public String getPackageName(){
         String string;
         if (!isPresetApp()) {
             ComponentName componentName = intent.getComponent();
-            if (componentName != null)
+            if (componentName != null) {
                 string = componentName.getPackageName();
-            else
+            } else {
                 string = null;
+            }
         } else {
             string = mIconPackage;
         }

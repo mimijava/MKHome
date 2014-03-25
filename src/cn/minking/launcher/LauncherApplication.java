@@ -15,16 +15,19 @@ import android.app.Application;
 import android.content.*;
 
 public class LauncherApplication extends Application {
+    /******* 常量  *******/
     private static float sScreenDensity = 0.0F;
-    
+        
+    /******* 数据  *******/
     /// M: 处理图标显示的缓冲
     private IconCache mIconCache = null;
-    private boolean mJustRestoreFinished = false;
+    private boolean mJustRestoreFinished;
     private Launcher mLauncher = null;
     WeakReference<LauncherProvider> mLauncherProvider = null;
     private LauncherModel mModel = null;
     
     public LauncherApplication() {
+        mJustRestoreFinished = false;
     }
     
     Launcher getLauncher(){
@@ -89,22 +92,32 @@ public class LauncherApplication extends Application {
         return ((Launcher)(object));
     }
     
+    /**
+     * 功能： 返回屏幕密度
+     * @return
+     */
     public static float getScreenDensity(){
         return sScreenDensity;
     }
     
     public static void startActivity(Context context, Intent intent){
         Launcher launcher = getLauncher(context);
-        if (launcher != null)
+        if (launcher != null){
             launcher.startActivityEx(intent, null);
+        }
     }
 
     public static void startActivityForResult(Context context, Intent intent, int i){
         Launcher launcher = getLauncher(context);
-        if (launcher != null)
+        if (launcher != null){
             launcher.startActivityForResult(intent, i);
+        }
     }
 
+    /**
+     * 描述： 创建Application、Service、Activity，会调用该方法给mBase属性赋值
+     */
+    @Override
     protected void attachBaseContext(Context context){
         super.attachBaseContext(context);
         

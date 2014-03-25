@@ -632,6 +632,10 @@ public class Launcher extends Activity implements OnClickListener,
         workspace.setLauncher(this);
         workspace.setThumbnailView(mWorkspacePreview);
         
+        mDeleteZone = (DeleteZone)mDragLayer.findViewById(R.id.delete_zone);
+        mDeleteZone.setLauncher(this);
+        mDeleteZone.setDragController(dragController);
+        
         // HOTSEAT
         mHotSeats = (HotSeats)mDragLayer.findViewById(R.id.hot_seats);
         mHotSeats.setLauncher(this);
@@ -640,6 +644,14 @@ public class Launcher extends Activity implements OnClickListener,
         mFolderCling = (FolderCling)findViewById(R.id.folder_cling);
         mFolderCling.setLauncher(this);
         mFolderCling.setDragController(dragController);
+        
+        dragController.setDragScoller(workspace);
+        dragController.addDragListener(mDeleteZone);
+        dragController.setScrollView(mDragLayer);
+        dragController.setMoveTarget(workspace);
+        dragController.addDropTarget(mHotSeats);
+        dragController.addDropTarget(workspace);
+        dragController.addDropTarget(mDeleteZone);
         
         setupAnimations();
         mPositionSnap = mDragLayer.findViewById(R.id.default_position);
@@ -1068,7 +1080,7 @@ public class Launcher extends Activity implements OnClickListener,
     public void removeGadget(ItemInfo iteminfo) {
         if (iteminfo.itemType == 5) {
             Gadget gadget1 = null;
-            Iterator iterator = mGadgets.iterator();
+            Iterator<Gadget> iterator = mGadgets.iterator();
             while (iterator.hasNext()){
                 Gadget gadget = (Gadget)iterator.next();
                 if (!((View)gadget).getTag().equals(iteminfo)){

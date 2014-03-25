@@ -940,12 +940,6 @@ public class LauncherModel extends BroadcastReceiver {
         mIconCache = iconCache;
     }
     
-    
-    static void addItemToDatabase(Context context, ItemInfo iteminfo, final long container, 
-            final long screen, final int cellX, final int cellY){
-        addItemToDatabase(context, iteminfo, container, screen, cellX, cellY, false);
-    }
-    
     /**
      * 功能：  将读取的Item添加到数据库中
      * @param context
@@ -955,7 +949,12 @@ public class LauncherModel extends BroadcastReceiver {
      * @param cellX： SCREEN中的 X 位置
      * @param cellY： SCREEN中的 Y 位置
      * @param reload: 是否需要重新加载
-     */
+     */  
+    static void addItemToDatabase(Context context, ItemInfo iteminfo, final long container, 
+            final long screen, final int cellX, final int cellY){
+        addItemToDatabase(context, iteminfo, container, screen, cellX, cellY, false);
+    }
+    
     static void addItemToDatabase(Context context, final ItemInfo item, final long container, 
             final long screen, final int cellX, final int cellY, final boolean reload){
         if (LOGD) {
@@ -1007,6 +1006,9 @@ public class LauncherModel extends BroadcastReceiver {
         runOnWorkerThread(r);
     }
     
+    /**
+     * 功能： 在数据库中移动项目
+     */
     static void moveItemInDatabase(Context context, ItemInfo iteminfo, 
             long container, long screen, int cellX, int cellY) {
         ContentValues contentvalues = new ContentValues();
@@ -1023,6 +1025,9 @@ public class LauncherModel extends BroadcastReceiver {
         updateItemInDatabase(context, iteminfo.id, contentvalues);
     }
     
+    /**
+     * 功能：在数据库中添加或者移动项目
+     */
     static void addOrMoveItemInDatabase(Context context, ItemInfo iteminfo, 
             final long container, final long screen, final int cellX, final int cellY) {
         if (iteminfo.container != -1L){
@@ -1032,23 +1037,9 @@ public class LauncherModel extends BroadcastReceiver {
         }
     }
     
-    static void applyBatch(final Context context, 
-            final String authority, 
-            final ArrayList<ContentProviderOperation> operations) {
-        runOnWorkerThread(new Runnable() {
-            public void run() {
-                try {
-                    context.getContentResolver().applyBatch(authority, operations);
-                    return;
-                } catch (RemoteException _ex) {
-                    throw new RuntimeException("applyBatch failed with RemoteException.");
-                } catch (OperationApplicationException _ex) {
-                    throw new RuntimeException("applyBatch failed with OperationApplicationException.");
-                }
-            }
-        });
-    }
-    
+    /**
+     * 功能： 将指定的项目从数据库中删除
+     */
     static void deleteItemFromDatabase(final Context context, final ItemInfo item) {
         if (LOGD) {
             Object aobj[] = new Object[3];
@@ -1068,6 +1059,46 @@ public class LauncherModel extends BroadcastReceiver {
             }
         });
     }
+    
+    /**
+     * Update an item to the database in a specified container.
+     */
+    public static void updateItemInDatabase(final Context context, long id, final ContentValues contentvalues) {
+        final Uri uri = LauncherSettings.Favorites.getContentUri(id);
+        final ContentResolver cr = context.getContentResolver();
+        
+        runOnWorkerThread(new Runnable() {
+            @Override
+            public void run() {
+                if (cr.update(uri, contentvalues, null, null) >= 0) {
+                    return;
+                }else {
+                    throw new RuntimeException("update Item in database failed.");
+                }
+            }
+        });
+    }
+
+    /**
+     * 功能： 在数据库中更新项目
+     * @param context
+     * @param iteminfo
+     */
+    static void updateItemInDatabase(Context context, ItemInfo iteminfo){
+        final ContentValues values = new ContentValues();
+        iteminfo.onAddToDatabase(values);
+        
+        if (LOGD) {
+            Object aobj[] = new Object[4];
+            aobj[0] = Integer.valueOf(iteminfo.cellX);
+            aobj[1] = Integer.valueOf(iteminfo.cellY);
+            aobj[2] = Long.valueOf(iteminfo.screenId);
+            aobj[3] = Long.valueOf(iteminfo.container);
+            Log.d(TAG, String.format("Update item in database (%d, %d) of screen %d under container %d", aobj));
+        }
+        
+        updateItemInDatabase(context, iteminfo.id, values);
+    }
 
     static void deleteUserFolderContentsFromDatabase(final Context context, final FolderInfo folderinfo) {
         runOnWorkerThread(new Runnable() {
@@ -1079,9 +1110,30 @@ public class LauncherModel extends BroadcastReceiver {
         });
     }
     
+    static void applyBatch(final Context context, 
+        final String authority, 
+        final ArrayList<ContentProviderOperation> operations) {
+        runOnWorkerThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    context.getContentResolver().applyBatch(authority, operations);
+                } catch (RemoteException _ex) {
+                    throw new RuntimeException("applyBatch failed with RemoteException.");
+                } catch (OperationApplicationException _ex) {
+                    throw new RuntimeException("applyBatch failed with OperationApplicationException.");
+                }
+            }
+        });
+    }
+        
+    /**
+     * 功能： 确保每一个项都有唯一的位置
+     */
     private boolean ensureItemUniquePostiton(Context context, Long id, int i){
         Boolean flag = false;
         try {
+            // 调用Provider 在数据库中检查位置的唯一性
             Bundle bundle = context.getContentResolver().
                     acquireContentProviderClient(LauncherSettings.Favorites.CONTENT_URI).
                     call("ensureItemUniquePosition", Long.toString(id.longValue()), null);
@@ -1111,11 +1163,12 @@ public class LauncherModel extends BroadcastReceiver {
             runOnWorkerThread(new Runnable() {
                 @Override
                 public void run() {
-                    HashSet hashset = LauncherModel.sDelayedUpdateBuffer;
+                    HashSet<ItemInfo> hashset = LauncherModel.sDelayedUpdateBuffer;
                     ItemInfo iteminfo;
                     ContentValues contentvalues;
-                    for (Iterator iterator = LauncherModel.sDelayedUpdateBuffer.iterator(); iterator.hasNext(); LauncherModel.updateItemInDatabase(context, iteminfo.id, contentvalues))
-                    {
+                    for (Iterator<ItemInfo> iterator = hashset.iterator(); 
+                            iterator.hasNext(); 
+                            LauncherModel.updateItemInDatabase(context, iteminfo.id, contentvalues)) {
                         iteminfo = (ItemInfo)iterator.next();
                         contentvalues = new ContentValues();
                         contentvalues.put("launchCount", Integer.valueOf(iteminfo.launchCount));
@@ -1124,8 +1177,6 @@ public class LauncherModel extends BroadcastReceiver {
 
                     LauncherModel.sDelayedUpdateBuffer.clear();
                 }
-
-            
             });
             flag = true;
         } else {
@@ -1167,7 +1218,7 @@ public class LauncherModel extends BroadcastReceiver {
     }
     
     /**
-     * 功能：  
+     * 功能： 加载Shortcut
      */
     private void onLoadShortcuts(ArrayList<ShortcutInfo> arraylist){
         synchronized (mLock) {
@@ -1264,6 +1315,11 @@ public class LauncherModel extends BroadcastReceiver {
         }
     }
     
+    /**
+     * 描述： Launcher Activity OnCreate中调用的桌面数据加载入口
+     * @param context
+     * @param isLaunching
+     */
     public void startLoader(Context context, boolean isLaunching) {
         synchronized (mLock) {
             // 如果线程没有任何作用则不进入调用节省时间及资源
@@ -1280,6 +1336,11 @@ public class LauncherModel extends BroadcastReceiver {
         }
     }
     
+    /**
+     * 描述： 将读取的ShortcutInfo添加到Uri、Packages、等数据结构中
+     * @param context
+     * @param isLaunching
+     */
     private void onLoadShortcut(ShortcutInfo shortcutinfo){
         synchronized (mLock) {
             if (shortcutinfo.intent != null) {
@@ -1330,7 +1391,10 @@ public class LauncherModel extends BroadcastReceiver {
         updateItemInDatabase(context, folderinfo.id, contentvalues);
     }
     
-    ShortcutInfo addShortcut(Context context, Intent intent, CellLayout.CellInfo cellinfo){
+    /**
+     * 功能： 添加Shortcut
+     */
+    public ShortcutInfo addShortcut(Context context, Intent intent, CellLayout.CellInfo cellinfo){
         long screen;
         ShortcutInfo shortcutInfo;
         int cx;
@@ -1372,6 +1436,9 @@ public class LauncherModel extends BroadcastReceiver {
         return shortcutInfo;
     }
     
+    /**
+     * 功能： 根据给出的Intent得到ShortcutInfo信息
+     */
     private ShortcutInfo infoFromShortcutIntent(Context context, Intent intent){
         ShortcutInfo shortcutInfo = new ShortcutInfo();
         
@@ -1418,10 +1485,19 @@ public class LauncherModel extends BroadcastReceiver {
         if(LOGD) Log.w(TAG, "Nobody to tell about the new app.  Launcher is probably loading.");
     }
     
+    /**
+     * 功能： 给一个默认的快捷图标
+     */
     public Bitmap getFallbackIcon(){
         return Bitmap.createBitmap(mIconCache.getDefaultIcon());
     }
 
+    /**
+     * 功能： 从数据库中得到图标信息
+     * @param cursor
+     * @param iconIndex
+     * @return
+     */
     public Bitmap getIconFromCursor(Cursor cursor, int iconIndex){
         if (LOGD) {
             Log.d(TAG, "getIconFromCursor app="
@@ -1438,6 +1514,9 @@ public class LauncherModel extends BroadcastReceiver {
         }
     }
     
+    /**
+     * 功能： 得到Shortcut信息
+     */
     public ShortcutInfo getShortcutInfo(PackageManager packageManager, Intent intent, 
             Context context, Cursor cursor, int iconIndex, int iTitle){
         Bitmap bitmap = null;
@@ -1588,46 +1667,6 @@ public class LauncherModel extends BroadcastReceiver {
             // or when the app is updated with a new icon.
             updateItemInDatabase(context, shortcutInfo);
         }
-    }
-    
-    /**
-     * Update an item to the database in a specified container.
-     */
-    public static void updateItemInDatabase(final Context context, long id, final ContentValues contentvalues) {
-        final Uri uri = LauncherSettings.Favorites.getContentUri(id);
-        final ContentResolver cr = context.getContentResolver();
-        
-        runOnWorkerThread(new Runnable() {
-            @Override
-            public void run() {
-                if (cr.update(uri, contentvalues, null, null) >= 0) {
-                    return;
-                }else {
-                    throw new RuntimeException("update Item in database failed.");
-                }
-            }
-        });
-    }
-
-    /**
-     * 功能： 在数据库中更新项目
-     * @param context
-     * @param iteminfo
-     */
-    static void updateItemInDatabase(Context context, ItemInfo iteminfo){
-        final ContentValues values = new ContentValues();
-        iteminfo.onAddToDatabase(values);
-        
-        if (LOGD) {
-            Object aobj[] = new Object[4];
-            aobj[0] = Integer.valueOf(iteminfo.cellX);
-            aobj[1] = Integer.valueOf(iteminfo.cellY);
-            aobj[2] = Long.valueOf(iteminfo.screenId);
-            aobj[3] = Long.valueOf(iteminfo.container);
-            Log.d(TAG, String.format("Update item in database (%d, %d) of screen %d under container %d", aobj));
-        }
-        
-        updateItemInDatabase(context, iteminfo.id, values);
     }
     
     public AllAppsList getAllAppsList() {

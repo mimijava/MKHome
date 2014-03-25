@@ -1,5 +1,14 @@
 package cn.minking.launcher;
-
+/**
+ * 作者：      minking
+ * 文件名称:    DragView.java
+ * 创建时间：    2014-02-24
+ * 描述：  
+ * 更新内容
+ * ====================================================================================
+ * 20140324: 修改可拖动项目的视图View
+ * ====================================================================================
+ */
 import android.animation.ValueAnimator;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
@@ -12,76 +21,75 @@ import android.view.View;
 import android.view.animation.DecelerateInterpolator;
 
 public class DragView extends View{
+    private static final String TAG = "DragView";
     ValueAnimator mAnim;
     private Bitmap mBitmap;
     private Paint mCustomPaint;
     private DragLayer mDragLayer;
-    private Rect mDragRegion;
-    private Point mDragVisualizeOffset;
-    private boolean mHasDrawn;
+    private Rect mDragRegion = null;
+    private Point mDragVisualizeOffset = null;
+    private boolean mHasDrawn = false;
     private DragLayer.LayoutParams mLayoutParams;
-    private float mOffsetX;
-    private float mOffsetY;
+    private float mOffsetX = 0.0F;
+    private float mOffsetY = 0.0F;
     private Paint mPaint;
     private int mRegistrationX;
     private int mRegistrationY;
     
     public DragView(Launcher launcher, Bitmap bitmap, 
-            int i, int j, int k, int l, int i1, int j1) {
+            int registrationX, int registrationY, int left, int top, int width, int height) {
         super(launcher);
-        mDragVisualizeOffset = null;
-        mDragRegion = null;
-        mDragLayer = null;
-        mHasDrawn = false;
-        mOffsetX = 0F;
-        mOffsetY = 0F;
         mDragLayer = launcher.getDragLayer();
-        Resources resources = getResources();
-        final int extraPixel = resources.getInteger(R.integer.config_dragViewExtraPixels);
+        
+        Resources res = getResources();
+        final int offsetX = res.getDimensionPixelSize(R.dimen.dragViewOffsetX);
+        final int offsetY = res.getDimensionPixelSize(R.dimen.dragViewOffsetY);
+        final int extraPixel = res.getInteger(R.integer.config_dragViewExtraPixels);
+        
+        // 被拖动的目标放大显示
         Matrix matrix = new Matrix();
-        float offsetT = (float)((i1 + extraPixel) / i1);
-        if (offsetT != 1F){
+        float offsetT = (float)((width + extraPixel) / width);
+        if (offsetT != 1.0F){
             matrix.setScale(offsetT, offsetT);
         }
         
-        final int offsetX = resources.getDimensionPixelSize(R.dimen.dragViewOffsetX);
-        final int offsetY = resources.getDimensionPixelSize(R.dimen.dragViewOffsetY);
-        
-        float af[] = new float[]{0F, 1F};
-        mAnim = ValueAnimator.ofFloat(af);
+        // 放大过程动画
+        mAnim = ValueAnimator.ofFloat(0.0F, 1.0F);
         mAnim.setDuration(110L);
         mAnim.setInterpolator(new DecelerateInterpolator(2.5F));
         
-        mAnim.addUpdateListener(new android.animation.ValueAnimator.AnimatorUpdateListener() {
+        mAnim.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
             
             @Override
             public void onAnimationUpdate(ValueAnimator valueanimator) {
-                 float f = ((Float)valueanimator.getAnimatedValue()).floatValue();
-                 int l1 = (int)(f * (float)offsetX - mOffsetX);
-                 int i2 = (int)(f * (float)offsetY - mOffsetY);
+                float value = ((Float)valueanimator.getAnimatedValue()).floatValue();
+                int deltaX = (int)(value * (float)offsetX - mOffsetX);
+                int deltaY = (int)(value * (float)offsetY - mOffsetY);
+                
+                if (getParent() == null) {
+                    valueanimator.cancel();
+                }else {
+                    DragLayer.LayoutParams localLayoutParams = mLayoutParams;
+                    localLayoutParams.x = (deltaX + localLayoutParams.x);
+                    localLayoutParams.y = (deltaY + localLayoutParams.y);
+                    mDragLayer.requestLayout();
+                }
             }
         });
         
-        mBitmap = Bitmap.createBitmap(bitmap, k, l, i1, j1, matrix, true);
-        setDragRegion(new Rect(0, 0, i1, j1));
-        mRegistrationX = i;
-        mRegistrationY = j;
-        int k1 = android.view.View.MeasureSpec.makeMeasureSpec(0, 0);
-        measure(k1, k1);
+        // 创建位图
+        mBitmap = Bitmap.createBitmap(bitmap, left, top, width, height, matrix, true);
+        setDragRegion(new Rect(0, 0, width, height));
+        mRegistrationX = registrationX;
+        mRegistrationY = registrationY;
+        int ms = MeasureSpec.makeMeasureSpec(MeasureSpec.UNSPECIFIED, MeasureSpec.UNSPECIFIED);
+        measure(ms, ms);
     }
     
-    public Rect getDragRegion(){
-        return mDragRegion;
-    }
-    
-    public boolean hasDrawn(){
-        return mHasDrawn;
-    }
-    
-    void move(int i, int j){
+    void move(int touchX, int touchY){
         DragLayer.LayoutParams layoutparams = mLayoutParams;
-        layoutparams.x = (i - mRegistrationX) + (int)mOffsetX;
-        layoutparams.y = (j - mRegistrationY) + (int)mOffsetY;
+        layoutparams.x = (touchX - mRegistrationX) + (int)mOffsetX;
+        layoutparams.y = (touchY - mRegistrationY) + (int)mOffsetY;
         mDragLayer.requestLayout();
     }
 
@@ -89,15 +97,22 @@ public class DragView extends View{
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         
+        final boolean debug = false;
+        if (debug) {
+            Paint p = new Paint();
+            p.setStyle(Paint.Style.FILL);
+            p.setColor(0x66ffffff);
+            canvas.drawRect(0, 0, getWidth(), getHeight(), p);
+        }
+        
         mHasDrawn = true;
-        Bitmap bitmap = mBitmap;
         Paint paint;
         if (mCustomPaint != null){
             paint = mCustomPaint;
         } else {
             paint = mPaint;
         }
-        canvas.drawBitmap(bitmap, 0F, 0F, paint);
+        canvas.drawBitmap(mBitmap, 0F, 0F, paint);
     }
 
     @Override
@@ -115,21 +130,34 @@ public class DragView extends View{
         });
     }
     
-    public void setAlpha(float f){
-        setAlpha(f);
+    @Override
+    public void setAlpha(float alpha){
+        super.setAlpha(alpha);
         if (mPaint == null){
             mPaint = new Paint();
         }
-        mPaint.setAlpha((int)(255F * f));
+        mPaint.setAlpha((int)(255.0F * alpha));
         invalidate();
+    }
+    
+    public boolean hasDrawn(){
+        return mHasDrawn;
     }
     
     public void setDragRegion(Rect rect){
         mDragRegion = rect;
     }
+       
+    public Rect getDragRegion(){
+        return mDragRegion;
+    }
     
     public void setDragVisualizeOffset(Point point){
         mDragVisualizeOffset = point;
+    }
+    
+    public Point getDragVisualizeOffset() {
+        return mDragVisualizeOffset;
     }
     
     public void setPaint(Paint paint){
@@ -137,16 +165,16 @@ public class DragView extends View{
         invalidate();
     }
     
-    public void show(int i, int j){
+    public void show(int mMotionDownX, int mMotionDownY){
         mDragLayer.addView(this);
-        DragLayer.LayoutParams layoutparams = new DragLayer.LayoutParams(0, 0);
-        layoutparams.width = mBitmap.getWidth();
-        layoutparams.height = mBitmap.getHeight();
-        layoutparams.x = i - mRegistrationX;
-        layoutparams.y = j - mRegistrationY;
-        layoutparams.customPosition = true;
-        setLayoutParams(layoutparams);
-        mLayoutParams = layoutparams;
+        DragLayer.LayoutParams lParams = new DragLayer.LayoutParams(0, 0);
+        lParams.width = mBitmap.getWidth();
+        lParams.height = mBitmap.getHeight();
+        lParams.x = mMotionDownX - mRegistrationX;
+        lParams.y = mMotionDownY - mRegistrationY;
+        lParams.customPosition = true;
+        setLayoutParams(lParams);
+        mLayoutParams = lParams;
         mAnim.start();
     }
 }
