@@ -99,8 +99,8 @@ public class ScreenView extends ViewGroup {
         public boolean onScale(ScaleGestureDetector detector) {
             boolean bFlag = true;
             float f = detector.getScaleFactor();
-            if (mTouchState == 0 && ((float)detector.getTimeDelta() > VALID_PINCH_TIME || f < VALID_PINCH_RATIO || f > 1.052632F)) {
-                setTouchState(null, 4);
+            if (mTouchState == TOUCH_STATE_REST && ((float)detector.getTimeDelta() > VALID_PINCH_TIME || f < VALID_PINCH_RATIO || f > 1.052632F)) {
+                setTouchState(null, TOUCH_STATE_SCALE);
             }
             if (f >= VALID_PINCH_IN_RATIO) {
                 if (f <= VALID_PINCH_OUT_RATIO) {
@@ -117,7 +117,7 @@ public class ScreenView extends ViewGroup {
         @Override
         public boolean onScaleBegin(ScaleGestureDetector detector) {
             boolean bFlag = true;
-            if (mTouchState != 0) {
+            if (mTouchState != TOUCH_STATE_REST) {
                 bFlag = false;
             }else {
                 bFlag = true;
@@ -149,7 +149,7 @@ public class ScreenView extends ViewGroup {
                 if (!mScroller.isFinished()) {
                     mScroller.abortAnimation();
                 }
-                setTouchState(motionEvent, 3);
+                setTouchState(motionEvent, TOUCH_STATE_PINCHING);
                 break;
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
@@ -334,77 +334,88 @@ public class ScreenView extends ViewGroup {
 
         public void addMovement(MotionEvent motionevent) {
             if (mVelocityTracker == null) {
+                // 获得VelocityTracker类实例
                 mVelocityTracker = VelocityTracker.obtain();
             }
+            // 将事件加入到VelocityTracker类实例中
             mVelocityTracker.addMovement(motionevent);
-            float f = motionevent.getX();
+            float x = motionevent.getX();
             if (mPointerId != -1) {
                 int i = motionevent.findPointerIndex(mPointerId);
                 if (i == INVALID_POINTER) {
                     mPointerId = -1;
                 } else {
-                    f = motionevent.getX(i);
+                    x = motionevent.getX(i);
                 }
             }
             if (mStartX >= 0F) {
                 if (mPrevX >= 0F) {
                     if (mFoldX >= 0F) {
                         if (mFoldX != mPrevX && 
-                                (mPrevX > mFoldX && f < mPrevX 
-                                        || mPrevX < mFoldX && f > mPrevX) 
-                                && Math.abs(f - mFoldX) > 3F) {
+                                (mPrevX > mFoldX && x < mPrevX 
+                                        || mPrevX < mFoldX && x > mPrevX) 
+                                && Math.abs(x - mFoldX) > 3F) {
                             mStartX = mFoldX;
                             mFoldX = mPrevX;
                         }
                     } else {
-                        if ((mPrevX > mStartX && f < mPrevX 
-                                || mPrevX < mStartX && f > mPrevX) 
-                            && Math.abs(f - mStartX) > 3F) {
+                        if ((mPrevX > mStartX && x < mPrevX 
+                                || mPrevX < mStartX && x > mPrevX) 
+                            && Math.abs(x - mStartX) > 3F) {
                             mFoldX = mPrevX;
                         }
                     }
-                    mPrevX = f;
+                    mPrevX = x;
                 } else {
-                    mPrevX = f;
+                    mPrevX = x;
                 }
             } else {
-                mStartX = f;
+                mStartX = x;
             }
         }
 
-        public int getFlingDirection(float f) {
-            int fDir = 1;
-            if (f <= 300F) {
-                fDir = 4;
+        public int getFlingDirection(float velocity) {
+            int fDir = FLING_NO_VELOCITY;
+            if (LOGD) {
+                Log.d(TAG, "getFlingDirection : " + velocity + " mFoldX :" + mFoldX + " mPrevX: " +
+                            mPrevX + " mScrollX: " + mScrollX + " mStartX: " + mStartX);
+            }
+            if (velocity <= 300F) {
+                fDir = FLING_VELOCITY_SLOW;
             } else {
                 if (mFoldX >= 0F) {
                     if (mPrevX >= mFoldX) {
                         if (mPrevX <= mFoldX) {
-                            fDir = 3;
+                            fDir = FLING_IN_SCREEN;
                         } else {
                             if (mScrollX > getCurrentScreen().getLeft()) {
-                                fDir = 3;
+                                fDir = FLING_IN_SCREEN;
                             }
                         }
                     } else {
                         if (mScrollX >= getCurrentScreen().getLeft()){
-                            fDir = 2;
+                            fDir = FLING_TO_PREV_SCREEN;
                         } else {
-                            fDir = 3;
+                            fDir = FLING_IN_SCREEN;
                         }
                     }
                 } else {
                     if (mPrevX <= mStartX) {
-                        fDir = 2;
+                        fDir = FLING_TO_PREV_SCREEN;
                     }
                 }
             }
             return fDir;
         }
 
-        public float getXVelocity(int i, int j, int k) {
-            mVelocityTracker.computeCurrentVelocity(i, j);
-            return mVelocityTracker.getXVelocity(k);
+        /**
+         * 功能： 得到横向的滑动速率 
+         */
+        public float getXVelocity(int units, int maxVelocity, int id) {
+            // 判断当ev事件是MotionEvent.ACTION_UP时：计算速率
+            // 设置units的值为1000 ，意思为一秒时间内运动了多少个像素
+            mVelocityTracker.computeCurrentVelocity(units, maxVelocity);
+            return mVelocityTracker.getXVelocity(id);
         }
 
         public void recycle() {
@@ -448,6 +459,11 @@ public class ScreenView extends ViewGroup {
     protected static final int MINIMAL_SLIDE_BAR_POINT_WIDTH = 48;
     private static final float NANOTIME_DIV = 1000000000.0F+009F;
     
+    private static final int FLING_NO_VELOCITY = 1;
+    private static final int FLING_TO_PREV_SCREEN = 2;
+    private static final int FLING_IN_SCREEN = 3;
+    private static final int FLING_VELOCITY_SLOW = 4;
+    
     // mScroll滑动的动画时间
     private static final int DEFAULT_SCREEN_SNAP_DURATION = 300;
     private static final int MAX_SCREEN_SNAP_DURATION = 550;
@@ -460,11 +476,13 @@ public class ScreenView extends ViewGroup {
     /*
      * 触摸的四个状态
      */
-    public static final int MAX_TOUCH_STATE = 4;
+    public static final int MAX_TOUCH_STATE = 6;
     protected static final int TOUCH_STATE_REST = 0;
     protected static final int TOUCH_STATE_SCROLLING = 1;
     protected static final int TOUCH_STATE_SLIDING = 2;
     protected static final int TOUCH_STATE_PINCHING = 3;
+    protected static final int TOUCH_STATE_SCALE = 4;
+    protected static final int TOUCH_STATE_DRAG = 5;
     /*
      * 屏幕对其四种方式
      */
@@ -1036,7 +1054,7 @@ public class ScreenView extends ViewGroup {
 
     private void onTouchEventUnique(MotionEvent motionEvent){
         mGestureVelocityTracker.addMovement(motionEvent);
-        if (mTouchState == TOUCH_STATE_REST || mTouchState == TOUCH_STATE_PINCHING) {
+        if (mTouchState == TOUCH_STATE_REST || mTouchState == TOUCH_STATE_SCALE) {
             mScaleGestureDetector.onTouchEvent(motionEvent);
         }
     }
@@ -1066,16 +1084,16 @@ public class ScreenView extends ViewGroup {
         return bFlag;
     }
     
-    /*
-     * 根据传递的速率滑动页面
+    /**
+     * 功能： 根据传递的速率滑动页面
      */
     private void snapByVelocity(int pointerId) {
         if (mChildScreenWidth > 0 && getCurrentScreen() != null) {
-            int xVel = (int)mGestureVelocityTracker.getXVelocity(1000, mMaximumVelocity, pointerId);
-            int dir = mGestureVelocityTracker.getFlingDirection(Math.abs(xVel));
-            if (dir != 1 || mCurrentScreen <= 0) {
-                if (dir != 2 || mCurrentScreen >= getScreenCount() - 1) {
-                    if (dir != 3) {
+            int velocity = (int)mGestureVelocityTracker.getXVelocity(1000, mMaximumVelocity, pointerId);
+            int dir = mGestureVelocityTracker.getFlingDirection(Math.abs(velocity));
+            if (dir != FLING_NO_VELOCITY || mCurrentScreen <= 0) {
+                if (dir != FLING_TO_PREV_SCREEN || mCurrentScreen >= getScreenCount() - 1) {
+                    if (dir != FLING_IN_SCREEN) {
                         int visibleRang;
                         int sw = mChildScreenWidth;
                         if (!mScrollWholeScreen) {
@@ -1086,13 +1104,13 @@ public class ScreenView extends ViewGroup {
                         sw *= visibleRang;
                         snapToScreen((mScrollX + (sw >> 1)) / mChildScreenWidth, 0, true);
                     }else {
-                        snapToScreen(mCurrentScreen, xVel, true);
+                        snapToScreen(mCurrentScreen, velocity, true);
                     }
                 }else {
-                    snapToScreen(mCurrentScreen + mVisibleRange, xVel, true);
+                    snapToScreen(mCurrentScreen + mVisibleRange, velocity, true);
                 }
             }else {
-                snapToScreen(mCurrentScreen - mVisibleRange, xVel, true);
+                snapToScreen(mCurrentScreen - mVisibleRange, velocity, true);
             }
         }
     }
@@ -1352,7 +1370,6 @@ public class ScreenView extends ViewGroup {
                 mNextScreen = Math.max(0, Math.min(screen, getScreenCount() - 1));
                 mNextScreen = mNextScreen - (mNextScreen % mVisibleRange);
             }
-            
             int screenDelta = Math.max(1, Math.abs(mNextScreen - mCurrentScreen));
             if (!mScroller.isFinished()) {
                 mScroller.abortAnimation();
@@ -1389,18 +1406,22 @@ public class ScreenView extends ViewGroup {
     }
 
     /**
-     * 计算滚动的位置
+     * 功能：计算滚动的位置
      */
     @Override
     public void computeScroll() {
         isFromcomputeScroll = true;
         // 返回值为boolean，true说明滚动尚未完成，false说明滚动已经完成。
         // 这是一个很重要的方法，通常放在View.computeScroll()中，用来判断是否滚动是否结束。  
-        if (!mScroller.computeScrollOffset()) {
-            if (LOGD) {
-                Log.d(TAG, "mScroller finished!" );
-            }
-            
+        if (mScroller.computeScrollOffset()) {
+            // 当触摸ACTION_UP事件触发时，运行至此，让页面随着回到指定位置
+            int x = mScroller.getCurrX();
+            mScrollX = x;
+            mTouchX = x;
+            mSmoothingTime = (float)System.nanoTime() / NANOTIME_DIV;
+            mScrollY = mScroller.getCurrY();
+            scrollTo(mScrollX, mScrollY);
+        } else {
             // 如果处于触摸滚动状态，则刷新
             if (mNextScreen == INVALID_SCREEN 
                 && mTouchState == TOUCH_STATE_SCROLLING) {
@@ -1409,33 +1430,14 @@ public class ScreenView extends ViewGroup {
                 float dx = mTouchX - (float)mScrollX;
                 mScrollX = (int)((float)mScrollX + dx * e);
                 mSmoothingTime = now;
-                if (LOGD) {
-                    Log.d(TAG, "now : " + now + "mScrollX : " + mScrollX + "dx :" + dx);
-                }
+
                 if (dx > 1.f || dx < -1.f) {
                     postInvalidate();
                 }
-            }else {
-                if (LOGD) {
-                    Log.d(TAG, "mNextScreen : " + mNextScreen);
-                }
+            } else if (mNextScreen != INVALID_SCREEN) {
                 setCurrentScreenInner(Math.max(0, Math.min(mNextScreen, (getScreenCount() - 1))));
-                mNextScreen = INVALID_SCREEN;
+                mNextScreen = INVALID_SCREEN;   
             }
-        } else {
-            // 当触摸ACTION_UP事件触发时，运行至此，让页面随着回到指定位置
-            if (LOGD) {
-                Log.d(TAG, "mScroller unfinished!" );
-            }
-            int x = mScroller.getCurrX();
-            mScrollX = x;
-            mTouchX = x;
-            if (LOGD) {
-                Log.d(TAG, "x : " + x);
-            }
-            mSmoothingTime = (float)System.nanoTime() / NANOTIME_DIV;
-            mScrollY = mScroller.getCurrY();
-            scrollTo(mScrollX, mScrollY);
         }
         updateIndicatorPositions(mScrollX);
         updateSlidePointPosition(mScrollX);
@@ -1840,7 +1842,7 @@ public class ScreenView extends ViewGroup {
         return bFlag;
     }
     
-    /*
+    /**
      * 设置最大Snap速率
      */
     public void setMaximumSnapVelocity(int snap_velocity) {

@@ -43,8 +43,9 @@ public class HotSeatButton extends OnLongClickWrapper{
     }
     
     public void unbind(DragController dragController) {
-        if ((mIcon instanceof DropTarget) && ((DropTarget)mIcon).isDropEnabled())
+        if ((mIcon instanceof DropTarget) && ((DropTarget)mIcon).isDropEnabled()) {
             dragController.removeDropTarget((DropTarget)mIcon);
+        }
         removeAllViews();
         mIcon = null;
     }

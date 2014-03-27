@@ -429,9 +429,6 @@ public class DragLayer extends FrameLayout {
                 if (!mLauncher.isSceneAnimating()) {
                     // 将新位置输入进触摸处理类
                     mTouchHandle.setScaleMove(ev.getX(0), ev.getY(0), ev.getX(1), ev.getY(1));
-                    if (LOGD) {
-                        Log.e(TAG, "move 0 : " + mTouchHandle.getScaleType());
-                    }
                     if (mLauncher.isSceneShowing()) {
                         // 在缩略图模式下，如果触摸手势为放大手势则退出
                         if (!mLauncher.isFolderShowing() 
@@ -470,7 +467,6 @@ public class DragLayer extends FrameLayout {
 
     @Override
     public boolean onTouchEvent(MotionEvent ev) {
-        boolean flag1 = true;
         boolean flag = false;
         
         int x = (int)ev.getX();
@@ -491,10 +487,10 @@ public class DragLayer extends FrameLayout {
                 }
             }
             if (!flag){
-                flag1 = mDragController.onTouchEvent(ev);
+                return mDragController.onTouchEvent(ev);
             }
         }
-        return flag1;
+        return true;
     }
     
     /**

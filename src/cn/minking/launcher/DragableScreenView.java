@@ -17,6 +17,8 @@ import android.view.MotionEvent;
 
 public class DragableScreenView extends ScreenView
     implements DragScroller{
+    private static final String TAG = "MKHome.DragableScreenView";
+    
     /******* 常量 *******/
     // 滑动方向
     public final static int DIRECTION_LEFT = 0;
@@ -26,7 +28,7 @@ public class DragableScreenView extends ScreenView
     public final static int DRAG_ATTACH_EDGE = 1;
     
     // 当手指移动到屏幕的边缘，需要切换至下一个屏幕
-    public final static int EDGE_WIDTH = 30;
+    private int mScrollZone = 30;
 
     /******* 状态 *******/
     protected int mDragScrollState;
@@ -66,6 +68,7 @@ public class DragableScreenView extends ScreenView
 
     public DragableScreenView(Context context, AttributeSet attrs, int defStyle) {
         super(context, attrs, defStyle);
+        mScrollZone = context.getResources().getDimensionPixelSize(R.dimen.scroll_zone);
         mDragScrollState = DRAG_IN_SCREEN;
         mDragScrollRunnable = new ScrollRunnable();
         mDragScrollHandler = new Handler();
@@ -110,16 +113,17 @@ public class DragableScreenView extends ScreenView
     public boolean onTouchEvent(MotionEvent ev) {
         super.onTouchEvent(ev);
         int direction = DIRECTION_LEFT;
-        switch (ev.getAction()) {
+        switch (MotionEvent.ACTION_MASK & ev.getAction()) {
         case MotionEvent.ACTION_DOWN:
             break;
         case MotionEvent.ACTION_MOVE:
-            if (getTouchState() == TOUCH_STATE_SCROLLING) {
+            // 只处理触摸在拖动物体时
+            if (getTouchState() == TOUCH_STATE_DRAG) {
                 final int pointerIndex = ev.findPointerIndex(mActivePointerId);
                 int x = (int)ev.getX(pointerIndex);
                 
                 // 如果手指滑动至屏幕边缘
-                if (x >= EDGE_WIDTH && x <= (getWidth() - EDGE_WIDTH)) {
+                if (x >= mScrollZone && x <= (getWidth() - mScrollZone)) {
                     if (mDragScrollState == DRAG_ATTACH_EDGE) {
                         mDragScrollState = DRAG_IN_SCREEN;
                         mDragScrollHandler.removeCallbacks(mDragScrollRunnable);
@@ -128,7 +132,7 @@ public class DragableScreenView extends ScreenView
                     if (mDragScrollState == DRAG_IN_SCREEN) {
                         mDragScrollState = DRAG_ATTACH_EDGE;
                         ScrollRunnable scrollrunnable = mDragScrollRunnable;
-                        if (x >= EDGE_WIDTH){
+                        if (x >= mScrollZone){
                             direction = DIRECTION_RIGHT;
                         }
                         scrollrunnable.setDirection(direction);

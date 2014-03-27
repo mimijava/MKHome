@@ -222,6 +222,10 @@ public class LauncherSettings{
          * The icon is a bitmap.
          */
         static final int ICON_TYPE_BITMAP = 1;
+        
+        static final int ICON_TYPE_CUSTOMIZE = 2;
+        
+        static final int ICON_TYPE_TOGGLE = 3;
 
         /**
          * The icon package name, if icon type is ICON_TYPE_RESOURCE.

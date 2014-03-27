@@ -19,14 +19,19 @@ import android.content.ContentProviderOperation;
 import android.content.Context;
 import android.graphics.RectF;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.LinearLayout;
 
 public class HotSeats extends LinearLayout
-    implements android.view.View.OnLongClickListener, DragSource, DropTarget{
+    implements View.OnLongClickListener, DragSource, DropTarget{
+
+    private final static boolean LOGD = true;
+    private final static String TAG = "MKHome.HotSeats";
     
     private static int MAX_SEATS = -1;
+    private static int NO_EMPTY_SEATS = -1;
     private static final ItemInfo PLACE_HOLDER_SEAT = new ItemInfo();
     private Context mContext;
     private final ItemInfo mCurrentSeats[];
@@ -83,6 +88,12 @@ public class HotSeats extends LinearLayout
         }
     }
     
+    /**
+     * 功能： 通过X的坐标来计算POS
+     * @param index
+     * @param max
+     * @return
+     */
     private int getSeatPosByX(int index, int max) {
         int pos = 0;
         if (max != 0){
@@ -130,6 +141,9 @@ public class HotSeats extends LinearLayout
     private boolean isDropAllowed(int index, ItemInfo iteminfo) {
         int xPos = getSeatPosByX(index, getSeatsCount());
         boolean bDrop = false;
+        if(LOGD) {
+            Log.d(TAG, " xPos " + xPos + " iteminfo.container " + iteminfo.container + " index " + index);
+        }
         if (mCurrentSeats[xPos] == null 
             || !(mCurrentSeats[xPos] instanceof FolderInfo) 
             || iteminfo.container <= 0L) {
@@ -142,20 +156,29 @@ public class HotSeats extends LinearLayout
 
     private boolean isDropAllowed(DragSource dragsource, ItemInfo iteminfo) {
         boolean bDrop;
+        if(LOGD) {
+            Log.d(TAG, "mIsReplaceSupported " + mIsReplaceSupported + " mIsLoading " + mIsLoading + " iteminfo.itemType " + iteminfo.itemType);
+        }
         if (!mIsReplaceSupported || dragsource == this) {
             bDrop = false;
         } else {
             bDrop = true;
         }
+        
         if (mIsLoading || !bDrop && getVisibleSeatsCount() >= MAX_SEATS 
-                || (iteminfo.itemType != 0 
-                    && iteminfo.itemType != 1 
-                    && iteminfo.itemType != 2)){
+                || (iteminfo.itemType != LauncherSettings.Favorites.ITEM_TYPE_APPLICATION 
+                    && iteminfo.itemType != LauncherSettings.Favorites.ITEM_TYPE_SHORTCUT 
+                    && iteminfo.itemType != LauncherSettings.Favorites.ITEM_TYPE_FOLDER)){
             bDrop = false;
         }
         return bDrop;
     }
 
+    /**
+     * 功能： 是否允许放下
+     * @param dragobject
+     * @return
+     */
     private boolean isDropAllowed(DropTarget.DragObject dragobject) {
         boolean flag = false;
         if (isDropAllowed(dragobject.dragSource, dragobject.dragInfo) 
@@ -253,59 +276,61 @@ public class HotSeats extends LinearLayout
         }
     }
     
+    /**
+     * 功能： 给Item分配Seat位置
+     */
     private int setSeats(int index, ItemInfo iteminfo) {
-        int k1 = -1;
-        {
-            
-            int vCount = getVisibleSeatsCount();
-            if (vCount != MAX_SEATS) {
-                if (vCount != 0)
-                {
-                    int seatWidth = getSeatWidth(vCount);
-                    int l;
-                    if (!mIsReplaceSupported || mDraggingItem != null)
-                        l = 0;
-                    else
-                        l = seatWidth / 4;
-                    int j = 0;
-                    do
-                    {
-                        if (j >= vCount + 1){}
-                        int l1 = mLocation[0] + getPaddingLeft() + seatWidth * j + seatWidth / 2;
-                        if (j < vCount && Math.abs(index - l1) < l)
-                            break;
-                        if (index <= l + (l1 - seatWidth) || index > l1 - l)
-                        {
-                            j++;
-                        } else {
-                            vCount = 0;
-                            for (int i1 = 0; i1 < MAX_SEATS; i1++) {
-                                if (i1 != j) {
-                                    if (vCount < MAX_SEATS) {
-                                        if (mDraggingItem != null 
-                                            && mDraggingItem == mSavedSeats[vCount]) {
-                                            vCount++;
-                                        }
-                                        setSeat(i1, mSavedSeats[vCount]);
-                                        vCount++;
+        int k1 = -1;            
+        int vCount = getVisibleSeatsCount();
+        if (vCount != MAX_SEATS) {
+            if (vCount != 0) {
+                int seatWidth = getSeatWidth(vCount);
+                int l;
+                if (!mIsReplaceSupported || mDraggingItem != null) {
+                    l = 0;
+                } else {
+                    l = seatWidth / 4;
+                }
+                
+                for (int i = 0; i < vCount; i++) {
+                    int l1 = mLocation[0] + getPaddingLeft() + seatWidth * i + seatWidth / 2;
+                    if (i < vCount && Math.abs(index - l1) < l){
+                        k1 = i;
+                        break;
+                    }
+                    if (index <= l + (l1 - seatWidth) || index > l1 - l) {
+                        i++;
+                    } else {
+                        for (int j = 0, k = 0; j < MAX_SEATS; j++) {
+                            if (j != i) {
+                                // 如果拖动的位置小于最大的SEAT,分配一个新的位置
+                                if (k < MAX_SEATS) {
+                                    if (mDraggingItem != null 
+                                        && mDraggingItem == mSavedSeats[k]) {
+                                        k++;
                                     }
-                                } else {
-                                    setSeat(i1, iteminfo);
+                                    setSeat(j, mSavedSeats[k]);
+                                    k++;
                                 }
-                            }
-                            if (k1 >= MAX_SEATS) {
-                                k1 = -2;
+                            } else {
+                                // 替换这个位置
+                                setSeat(j, iteminfo);
                             }
                         }
-                    } while (true);
-                    k1 = j;
-                } else {
-                    k1 = 0;
+                        if (k1 >= 0) {
+                            restoreSeats();
+                            setSeat(k1, iteminfo);
+                        }
+                        return k1;
+                    }
                 }
             } else {
-                k1 = getSeatPosByX(index, vCount);
+                k1 = 0;
             }
+        } else {
+            k1 = getSeatPosByX(index, vCount);
         }
+    
         if (k1 >= 0) {
             restoreSeats();
             setSeat(k1, iteminfo);
@@ -404,10 +429,11 @@ public class HotSeats extends LinearLayout
     /**
      * 功能：  判断是否为空的SEAT
      */
-    boolean isEmptySeat(int i){
+    private boolean isEmptySeat(int pos){
         boolean flag = false;
-        if ((i < MAX_SEATS && i >= 0) 
-                && (mCurrentSeats[i] == null || mCurrentSeats[i] == PLACE_HOLDER_SEAT)){
+        if ((pos < MAX_SEATS && pos >= 0) 
+                && (mCurrentSeats[pos] == null 
+                    || mCurrentSeats[pos] == PLACE_HOLDER_SEAT)){
             flag = true;
         }
         return flag;
@@ -417,14 +443,13 @@ public class HotSeats extends LinearLayout
      * 功能：  找到SEAT中的空位置
      */
     public int findEmptySeat(){
-        int i = 0;
-        for (i = 0; i < MAX_SEATS; i++) {
-            if (isEmptySeat(i)) break;
+        for (int i = 0; i < MAX_SEATS; i++) {
+            if (isEmptySeat(i)) {
+                return i;
+            }
         }
-        if (i >= MAX_SEATS) {
-            i = -1;
-        }
-        return i;
+        
+        return NO_EMPTY_SEATS;
     }
     
     /**
@@ -433,17 +458,32 @@ public class HotSeats extends LinearLayout
      * @return
      */
     public boolean pushItem(ItemInfo iteminfo){
-        boolean bFlag = false;
-        
+        // 首先判定CX位置是否为空，为空则至2,否则至1
         if (!isEmptySeat(iteminfo.cellX)) {
-            if(-1 == findEmptySeat()) return bFlag;
-        }else {
+            // 1 : 找到空位，没空位则直接返回
+            int seat = findEmptySeat();
+            if(NO_EMPTY_SEATS == seat) {
+                return false;
+            }
+            if (iteminfo.cellX >= 0 && iteminfo.cellX < seat) {
+                for (int i = iteminfo.cellX; i <= seat; i++) {
+                    ItemInfo replaceItemInfo = mCurrentSeats[i];
+                    setSeat(i, iteminfo);
+                    iteminfo = replaceItemInfo;
+                }
+            } else {
+                setSeat(seat, iteminfo);
+            }
+        } else {
+            // 2: CX位置为空位置，直接放入
             setSeat(iteminfo.cellX, iteminfo);
         }
+        
+        // 保存
         if (!mIsLoading) {
             saveSeats(false);
         }
-        return bFlag;
+        return true;
     }
     
     /**
@@ -456,6 +496,8 @@ public class HotSeats extends LinearLayout
             mSavedSeats[i] = null;
             mCurrentSeats[i] = null;
         }
+        
+        // 设置加载状态为真
         mIsLoading = true;
     }
     
@@ -464,6 +506,7 @@ public class HotSeats extends LinearLayout
      */
     public void finishBinding(){
         saveSeats(false);
+        // 设置加载状态为false, 标识加载完成
         mIsLoading = false;
     }
     
@@ -503,6 +546,9 @@ public class HotSeats extends LinearLayout
         return;
     }
     
+    /**
+     * 功能： HOTSEAT支持长按
+     */
     @Override
     public boolean onLongClick(View view) {
         boolean flag = false;
@@ -511,6 +557,7 @@ public class HotSeats extends LinearLayout
             if (mDraggingItem != null) {
                 if (!(mDraggingItem instanceof FolderInfo) || !((FolderInfo)mDraggingItem).opened) {
                     if (!mLauncher.isFolderShowing()) {
+                        // 开始拖动，并将拖动的位置设置为PLACE_HOLDER
                         mDragController.startDrag(((HotSeatButton)view).getIcon(), this, mDraggingItem, DragController.DRAG_ACTION_COPY);
                         setSeat(mDraggingItem.cellX, PLACE_HOLDER_SEAT);
                         flag = true;

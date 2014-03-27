@@ -7,10 +7,12 @@ package cn.minking.launcher;
  * 更新内容
  * ====================================================================================
  * 20140225: APP快捷图标 文件创建
+ * 20140326: 完善快捷图标的拖动处理
  * ====================================================================================
  */
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.graphics.drawable.Drawable;
 import android.util.AttributeSet;
 import android.view.LayoutInflater;
 import android.view.ViewGroup;
@@ -35,11 +37,20 @@ public class ShortcutIcon extends ItemIcon
         mFolderCreationBgExit = null;
     }
     
+    /**
+     * 功能： 更新ShortcutInfo信息
+     * @param launcher
+     * @param shortcutinfo
+     */
     public void updateInfo(Launcher launcher, ShortcutInfo shortcutinfo){
+        // 设置标签
         setTag(shortcutinfo);
-        if (shortcutinfo.mIconType != 3) {
+        if (shortcutinfo.mIconType != LauncherSettings.Favorites.ICON_TYPE_CUSTOMIZE) {
+            // 设置默认图标
             setIcon(shortcutinfo.getIcon(launcher.getIconCache()));
         } 
+        
+        // 标题
         setTitle(shortcutinfo.title);
         launcher.bindAppMessage(this, shortcutinfo.intent.getComponent());
         if (mFolderCreationBgEnter == null) {
@@ -49,17 +60,20 @@ public class ShortcutIcon extends ItemIcon
         mLauncher = launcher;
     }
     
+    /**
+     * 功能： 从XML中的得到快捷图标的布局 
+     * @param layout
+     * @param launcher
+     * @param viewgroup
+     * @param shortcutinfo
+     * @return
+     */
     static ShortcutIcon fromXml(int layout, Launcher launcher, 
             ViewGroup viewgroup, ShortcutInfo shortcutinfo){
         ShortcutIcon shortcutIcon = (ShortcutIcon)LayoutInflater.from(launcher).inflate(layout, viewgroup, false);
         shortcutIcon.updateInfo(launcher, shortcutinfo);
             
         return shortcutIcon;
-    }
-
-    @Override
-    public boolean isDropEnabled() {
-        return true;
     }
 
     @Override
@@ -85,42 +99,69 @@ public class ShortcutIcon extends ItemIcon
     }
 
     @Override
+    public boolean isDropEnabled() {
+        boolean flag;
+        if (isCompact()) {
+            flag = false;
+        } else {
+            flag = true;
+        }
+        return flag;
+    }
+
+    /**
+     * 功能： 判断是否为APP或快捷方式，非则无法拖动
+     * @param dragobject
+     * @return
+     */
+    private boolean isDropable(DropTarget.DragObject dragobject) {
+        boolean flag = true;
+        if (dragobject.dragInfo.itemType != LauncherSettings.Favorites.ITEM_TYPE_APPLICATION 
+                && dragobject.dragInfo.itemType != LauncherSettings.Favorites.ITEM_TYPE_SHORTCUT){
+            flag = false;
+        }
+        return flag;
+    }
+    
+    
+    @Override
     public boolean acceptDrop(DragObject dragobject) {
-        // TODO Auto-generated method stub
-        return false;
+        return isDropable(dragobject);
     }
 
     @Override
     public DropTarget getDropTargetDelegate(DragObject dragobject) {
-        // TODO Auto-generated method stub
         return null;
     }
 
     @Override
     public void onDragEnter(DragObject dragobject) {
-        // TODO Auto-generated method stub
-        
+        mFolderCreationBg.startAnimation(mFolderCreationBgEnter);
+        invalidate();
     }
 
     @Override
     public void onDragExit(DragObject dragobject) {
-        // TODO Auto-generated method stub
-        
+        mFolderCreationBg.startAnimation(mFolderCreationBgExit);
+        invalidate();
     }
 
     @Override
     public void onDragOver(DragObject dragobject) {
-        // TODO Auto-generated method stub
         
     }
 
     @Override
     public boolean onDrop(DragObject dragobject) {
-        // TODO Auto-generated method stub
-        return false;
+        boolean flag;
+        if (!isDropable(dragobject)) {
+            flag = false;
+        } else {
+            mFolderCreationBg.startAnimation(mFolderCreationBgExit);
+            mLauncher.getWorkspace().createUserFolderWithDragOverlap(
+                    (ShortcutInfo)dragobject.dragInfo, (ShortcutInfo)getTag());
+            flag = true;
+        }
+        return flag;
     }
-    
-    
-    
-    
 }

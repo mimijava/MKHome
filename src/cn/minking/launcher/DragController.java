@@ -73,13 +73,19 @@ public class DragController {
     }
 
     /********** 常量  **********/
-    // 滑动方向
-    final public static int DIRECTION_LEFT = 0;
-    final public static int DIRECTION_RIGHT = 1;
+    public final static Boolean LOGD = true;
+    public final static String TAG = "MKHome.DragController";
     
-    final public static int DRAG_ACTION_COPY = 1;
-    final public static int DRAG_ACTION_MOVE = 0;
-    final private static long VIBRATE_DURATION = 35L;
+    // 滑动方向
+    public final static int DIRECTION_LEFT = 0;
+    public final static int DIRECTION_RIGHT = 1;
+    
+    public final static int DRAG_ACTION_COPY = 1;
+    public final static int DRAG_ACTION_MOVE = 0;
+    private final static long VIBRATE_DURATION = 35L;
+    
+    private static final int SCROLL_OUTSIDE_ZONE = 0;
+    private static final int SCROLL_WAITING_IN_ZONE = 1;
     
     /// M: 存储拖动目标
     private ArrayList<DropTarget> mDropTargets;
@@ -123,7 +129,7 @@ public class DragController {
         mListeners = new ArrayList<DragListener>();
         mTransloateXY = new float[2];
         mTempRect = new Rect();
-        mScrollState = 0;
+        mScrollState = SCROLL_OUTSIDE_ZONE;
         mSecondaryPointerId = -1;
         mScrollRunnable = new ScrollRunnable();
         mDistanceSinceScroll = 0;
@@ -200,26 +206,46 @@ public class DragController {
         return bitmap;
     }
 
-    private void drop(float f, float f1) {
-        boolean flag1 = true;
-        int ai[] = mCoordinatesTemp;
-        Object obj = findDropTarget((int)f, (int)f1, ai);
-        mDragObject.x = ai[0];
-        mDragObject.y = ai[1];
-        boolean flag = false;
-        if (obj != null) {
-            mDragObject.dragComplete = flag1;
-            ((DropTarget) (obj)).onDragExit(mDragObject);
-            if (((DropTarget) (obj)).acceptDrop(mDragObject)) {
-                flag = ((DropTarget) (obj)).onDrop(mDragObject);
+    private void drop(float x, float y) {
+        final int[] coordinates = mCoordinatesTemp;
+        DropTarget dropTarget = findDropTarget((int)x, (int)y, coordinates);
+        
+        mDragObject.x = coordinates[0];
+        mDragObject.y = coordinates[1];
+        
+        if (LOGD) {
+            Log.d(TAG, "drop: x = " + x + ", y = " + y + ", mDragObject.x = " + mDragObject.x
+                    + ", mDragObject.y = " + mDragObject.y + ", dropTarget = " + dropTarget);
+        }
+        boolean accepted = false;
+        if (dropTarget != null) {
+            mDragObject.dragComplete = true;
+            dropTarget.onDragExit(mDragObject);
+            if (dropTarget.acceptDrop(mDragObject)) {
+                accepted = dropTarget.onDrop(mDragObject);
             }
         }
         DropTarget.DragObject dragobject = mDragObject;
-        if (flag) {
-            flag1 = false;
+        if (accepted) {
+            dragobject.cancelled = false;
         }
-        dragobject.cancelled = flag1;
-        mDragObject.dragSource.onDropCompleted((View)obj, mDragObject, flag);
+        
+        mDragObject.dragSource.onDropCompleted((View)dropTarget, mDragObject, accepted);
+        
+        if (LOGD) {
+            Object obj1 = mDragObject.dragInfo;
+            StringBuilder stringBuilder = (new StringBuilder()).append("drop ").append(obj1).
+                    append("to").append(" (container:").append(((ItemInfo) (obj1)).container).
+                    append(" screen id:").append(((ItemInfo) (obj1)).screenId).append(" x:").
+                    append(((ItemInfo) (obj1)).cellX).append(" y:").
+                    append(((ItemInfo) (obj1)).cellY).append(") ");
+            String re;
+            if (!accepted)
+                re = "cancelled";
+            else
+                re = "accepted";
+            Log.d(TAG, (stringBuilder.append(re).append(".").toString()));  
+        }
     }
 
     private void endDrag() {
@@ -241,41 +267,51 @@ public class DragController {
         return;
     }
 
-    private DropTarget findDropTarget(int i, int j, int ai[]) {
+    
+    private DropTarget findDropTarget(int x, int y, int coordinates[]) {
         DropTarget droptarget = null;
         Rect rect = mRectTemp;
         ArrayList<DropTarget> arraylist = mDropTargets;
-        for (int k = 0; k < arraylist.size() - 1; k++) {
+        for (int k = 0; k < arraylist.size(); k++) {
             droptarget = (DropTarget)arraylist.get(k);
             if (droptarget.isDropEnabled() && ((View)droptarget).isShown()) {
                 droptarget.getHitRect(rect);
-                droptarget.getLocationOnScreen(ai);
-                rect.offset(ai[0] - droptarget.getLeft(), ai[1] - droptarget.getTop());
-                if (rect.contains(i, j)) {
+                droptarget.getLocationOnScreen(coordinates);
+                rect.offset(coordinates[0] - droptarget.getLeft(), coordinates[1] - droptarget.getTop());
+                if (rect.contains(x, y)) {
+                    coordinates[0] = x - coordinates[0];
+                    coordinates[1] = y - coordinates[1];
                     break;
                 }
             }   
         }
-        ai[0] = i - ai[0];
-        ai[1] = j - ai[1];
+        
         return droptarget;
     }
 
-    private void handleMoveEvent(int i, int j, MotionEvent motionevent) {
-        mDragObject.dragView.move(i, j);
-        int ai[] = mCoordinatesTemp;
-        DropTarget droptarget = findDropTarget(i, j, ai);
-        mDragObject.x = ai[0];
-        mDragObject.y = ai[1];
+    /**
+     * 功能： 处理拖动的移动事件
+     * @param x
+     * @param y
+     * @param motionevent
+     */
+    private void handleMoveEvent(int x, int y, MotionEvent motionevent) {
+        mDragObject.dragView.move(x, y);
+        
+        final int[] coordinates = mCoordinatesTemp;
+        DropTarget droptarget = findDropTarget(x, y, coordinates);
+        mDragObject.x = coordinates[0];
+        mDragObject.y = coordinates[1];
         if (droptarget == null) {
             if (mLastDropTarget != null){
                 mLastDropTarget.onDragExit(mDragObject);
             }
         } else {
-            DropTarget droptarget1 = droptarget.getDropTargetDelegate(mDragObject);
-            if (droptarget1 != null) {
-                droptarget = droptarget1;
+            DropTarget delegate = droptarget.getDropTargetDelegate(mDragObject);
+            if (delegate != null) {
+                droptarget = delegate;
             }
+            
             if (mLastDropTarget != droptarget)  {
                 if (mLastDropTarget != null) {
                     mLastDropTarget.onDragExit(mDragObject);
@@ -285,37 +321,40 @@ public class DragController {
             droptarget.onDragOver(mDragObject);
         }
         mLastDropTarget = droptarget;
-        boolean flag = false;
+        
+        boolean bDelete = false;
         if (mDeleteRegion != null) {
-            flag = mDeleteRegion.contains(i, j);
+            bDelete = mDeleteRegion.contains(x, y);
         }
-        int k = ViewConfiguration.get(mLauncher).getScaledWindowTouchSlop();
-        mDistanceSinceScroll = (int)((double)mDistanceSinceScroll + Math.sqrt(Math.pow(mLastTouch[0] - i, 2D) + Math.pow(mLastTouch[1] - j, 2D)));
-        mLastTouch[0] = i;
-        mLastTouch[1] = j;
-        if (flag || i >= mScrollZone) {
-            if (flag || i <= mScrollView.getWidth() - mScrollZone) {
-                if (mScrollState != 1) {
+        
+        // After a scroll, the touch point will still be in the scroll region.
+        // Rather than scrolling immediately, require a bit of twiddling to scroll again
+        int slop = ViewConfiguration.get(mLauncher).getScaledWindowTouchSlop();
+        mDistanceSinceScroll += Math.sqrt(Math.pow(mLastTouch[0] - x, 2) + Math.pow(mLastTouch[1] - y, 2));
+        mLastTouch[0] = x;
+        mLastTouch[1] = y;
+        if (bDelete || x >= mScrollZone) {
+            if (bDelete || x <= mScrollView.getWidth() - mScrollZone) {
+                if (mScrollState != SCROLL_WAITING_IN_ZONE) {
                     if (motionevent != null && mSecondaryPointerId > 0) {
                         if (motionevent.findPointerIndex(mSecondaryPointerId) <= 0) {
                             mSecondaryPointerId = -1;
-                        }
-                        else {
-                            if (Math.abs((float)i - motionevent.getX(motionevent.findPointerIndex(mSecondaryPointerId))) > 1F) {
+                        } else {
+                            if (Math.abs((float)x - motionevent.getX(motionevent.findPointerIndex(mSecondaryPointerId))) > 1F) {
                                 cancelScroll();
                                 mDragScroller.onSecondaryPointerMove(motionevent, mSecondaryPointerId);
                             }
                         }
                     }
                 } else {
-                    mScrollState = 0;
+                    mScrollState = SCROLL_OUTSIDE_ZONE;
                     cancelScroll();
                     mDragScroller.onExitScrollArea();
                 }
             } else {
-                if (mScrollState == 0 && mDistanceSinceScroll > k) {
-                    mScrollState = 1;
-                    if (mDragScroller.onEnterScrollArea(i, j, 1)) {
+                if (mScrollState == SCROLL_OUTSIDE_ZONE && mDistanceSinceScroll > slop) {
+                    mScrollState = SCROLL_WAITING_IN_ZONE;
+                    if (mDragScroller.onEnterScrollArea(x, y, 1)) {
                         mScrollRunnable.setDirection(DIRECTION_RIGHT);
                         cancelScroll();
                         mHandler.postDelayed(mScrollRunnable, 1000L);
@@ -323,9 +362,9 @@ public class DragController {
                 }
             }
         } else {
-            if (mScrollState == 0 && mDistanceSinceScroll > k) {
-                mScrollState = 1;
-                if (mDragScroller.onEnterScrollArea(i, j, 0)) {
+            if (mScrollState == SCROLL_OUTSIDE_ZONE && mDistanceSinceScroll > slop) {
+                mScrollState = SCROLL_WAITING_IN_ZONE;
+                if (mDragScroller.onEnterScrollArea(x, y, 0)) {
                     mScrollRunnable.setDirection(DIRECTION_LEFT);
                     cancelScroll();
                     mHandler.postDelayed(mScrollRunnable, 1000L);
@@ -387,11 +426,13 @@ public class DragController {
         return flag;
     }
 
-
-    private static int clamp(int rawX, int base, int metrics) {
-        if (rawX >= base){
-            if (rawX < metrics) {
-                base = rawX;
+    /**
+     * 功能： 防止数据超出区域
+     */
+    private static int clamp(int rawData, int base, int metrics) {
+        if (rawData >= base){
+            if (rawData < metrics) {
+                base = rawData;
             } else {
                 base = metrics - 1;
             }
@@ -447,9 +488,9 @@ public class DragController {
                 mMotionDownX = ((flag) ? 1 : 0);
                 mMotionDownY = y;
                 if (x >= mScrollZone && x <= view.getWidth() - mScrollZone) {
-                    mScrollState = 0;
+                    mScrollState = SCROLL_OUTSIDE_ZONE;
                 } else {
-                    mScrollState = 1;
+                    mScrollState = SCROLL_WAITING_IN_ZONE;
                     cancelScroll();
                     mHandler.postDelayed(mScrollRunnable, 1000L);
                 }
@@ -510,7 +551,7 @@ public class DragController {
     }
     
     /**
-     * 功能： 添加拖动目标
+     * 功能： 添加可拖至的目标， 如： Workspace，Hotseats， ShortcutInfo，等
      * @param droptarget
      */
     public void addDropTarget(DropTarget droptarget){
@@ -518,7 +559,7 @@ public class DragController {
     }
     
     /**
-     * 功能： 删除拖动目标
+     * 功能： 删除可拖至的目标
      */
     public void removeDropTarget(DropTarget droptarget){
         mDropTargets.remove(droptarget);
@@ -591,13 +632,13 @@ public class DragController {
         handleMoveEvent(mMotionDownX, mMotionDownY, null);
     }
     
-    public void startDrag(Drawable drawable, int i, int j,
-            DragSource dragsource, ItemInfo iteminfo, int k, Rect rect){
+    public void startDrag(Drawable drawable, int cx, int cy,
+            DragSource dragsource, ItemInfo iteminfo, int dragAction, Rect rect){
         Bitmap bitmap = renderDrawableToBitmap(drawable);
         if (bitmap != null) {
             Bitmap outlineBitmap = createDragOutline(bitmap, HolographicOutlineHelper.MAX_OUTER_BLUR_RADIUS);
             if (outlineBitmap != null){
-                startDrag(bitmap, outlineBitmap, i, j, dragsource, iteminfo, k, null, rect);
+                startDrag(bitmap, outlineBitmap, cx, cy, dragsource, iteminfo, dragAction, null, rect);
             }
         }
     }
@@ -617,9 +658,9 @@ public class DragController {
                     outlineBitmap = createDragOutline(viewBitmap, HolographicOutlineHelper.MAX_OUTER_BLUR_RADIUS);
                 }
                 if (!bOutline || outlineBitmap != null) {
-                    int ai[] = mCoordinatesTemp;
-                    mLauncher.getDragLayer().getLocationInDragLayer(view, ai);
-                    startDrag(viewBitmap, outlineBitmap, ai[0], ai[1], dragsource, iteminfo, action, null, rect);
+                    mLauncher.getDragLayer().getLocationInDragLayer(view, mCoordinatesTemp);
+                    startDrag(viewBitmap, outlineBitmap, mCoordinatesTemp[0], mCoordinatesTemp[1], 
+                            dragsource, iteminfo, action, null, rect);
                     viewBitmap.recycle();
                     if (action == DRAG_ACTION_MOVE) {
                         view.setVisibility(View.GONE);

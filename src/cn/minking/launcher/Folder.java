@@ -161,7 +161,11 @@ public class Folder extends LinearLayout
         return mLastAtMostMeasureHeight;
     }
     
-    void onOpen(boolean flag) {
+    /**
+     * 功能： 打开文件夹
+     * @param flag
+     */
+    public void onOpen(boolean flag) {
         mClosing = false;
         mInfo.opened = true;
         mContent.requestLayout();
@@ -344,7 +348,12 @@ public class Folder extends LinearLayout
         }
     }
 
-    void onClose(boolean bClose, Runnable runnable) {
+    /**
+     * 功能： 关闭文件夹
+     * @param bClose
+     * @param runnable
+     */
+    public void onClose(boolean bClose, Runnable runnable) {
         if (!mClosing) {
             mClosing = true;
             mInfo.opened = false;

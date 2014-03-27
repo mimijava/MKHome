@@ -338,10 +338,10 @@ public class CellLayout extends ViewGroup
     private boolean copyOccupiedCells(View oc[][], View ocBak[][]) {
         boolean flag = false;
          
-        for (int i = 0; i < mHCells; i++) {
-            for (int j = 0; j < mVCells; j++) {
-                if (ocBak[i][j] != oc[i][j])            {
-                    ocBak[i][j] = oc[i][j];
+        for (int mx = 0; mx < mHCells; mx++) {
+            for (int my = 0; my < mVCells; my++) {
+                if (ocBak[mx][my] != oc[mx][my])            {
+                    ocBak[mx][my] = oc[mx][my];
                     flag = true;
                 }   
             }
@@ -466,36 +466,38 @@ public class CellLayout extends ViewGroup
         
     }
     
-    
-    private void onRemoveViews(int i, int j) {
-        if (i < 0 || j < 0) return;
+    /**
+     * 功能： 移除View
+     * @param start
+     * @param count
+     */
+    private void onRemoveViews(int start, int count) {
+        if (start < 0 || count < 0) return;
         
-        int t = j;
-        while (t > 0) {
-            int k = t - 1;
-            View view = getChildAt(i + k);
+        for (int i = 0; i < count; i++) {
+            View view = getChildAt(start + i);
             if (!(view instanceof Folder) && view != mCellBackground) {
                 LayoutParams lParams = (LayoutParams)view.getLayoutParams();
-                if (((ItemInfo)view.getTag()).screenId == getScreenId())
+                if (((ItemInfo)view.getTag()).screenId == getScreenId()){
                     updateCellOccupiedMarks(lParams, view, true);
+                }
             }
-            t = k;
         }
     }
 
     private void relayoutByOccupiedCells(){
         long t = SystemClock.currentThreadTimeMillis();
-        for (int i = 0; i < mHCells; i++) {
-            for (int j = 0; j < mVCells; j++) {
-                View v = mOccupiedCell[i][j];
+        for (int mx = 0; mx < mHCells; mx++) {
+            for (int my = 0; my < mVCells; my++) {
+                View v = mOccupiedCell[mx][my];
                 if (v != null) {
                     LayoutParams layoutparams = (LayoutParams)v.getLayoutParams();
                     if (layoutparams.accessTag < t) {
                         ItemInfo itemInfo = (ItemInfo)v.getTag();
-                        itemInfo.cellX = i;
-                        itemInfo.cellY = j;
-                        layoutparams.cellX = i;
-                        layoutparams.cellY = j;
+                        itemInfo.cellX = mx;
+                        itemInfo.cellY = my;
+                        layoutparams.cellX = mx;
+                        layoutparams.cellY = my;
                         layoutparams.accessTag = t;
                     }
                 }
@@ -508,8 +510,9 @@ public class CellLayout extends ViewGroup
     
     
     private void rollbackLayout() {
-        if (mLayoutBackupValid && copyOccupiedCells(mOccupiedCellBak, mOccupiedCell))
+        if (mLayoutBackupValid && copyOccupiedCells(mOccupiedCellBak, mOccupiedCell)){
             relayoutByOccupiedCells();
+        }
     }
 
     private void saveCurrentLayout() {
@@ -604,9 +607,7 @@ public class CellLayout extends ViewGroup
             requestLayout();
         }
     }
-    
-    
-    
+        
     @Override
     public void buildDrawingCache(boolean autoScale) {
         super.buildDrawingCache(autoScale);
@@ -625,11 +626,6 @@ public class CellLayout extends ViewGroup
         }
     }
     
-    void cellToPoint(int i, int j, int ai[]) {
-        ai[0] = mPaddingLeft + i * (mCellWidth + mWidthGap);
-        ai[1] = mPaddingTop + j * (mCellHeight + mHeightGap);
-    }
-
     protected boolean checkLayoutParams(LayoutParams p) {
         return p instanceof LayoutParams;
     }
@@ -655,42 +651,6 @@ public class CellLayout extends ViewGroup
     @Override
     public void destroyDrawingCache() {
         super.destroyDrawingCache();
-    }
-    
-    int[] findNearestVacantArea(int i, int j, int k, int l, boolean flag) {
-        if (!flag && k * l > mEmptyCellNumber) {
-            return null;
-        }
-        
-        double d = 1.7976931348623157E+308D;
-        int ai[] = mCellXY;
-        int pos[] = new int[2];
-        
-        for (int j1 = mHCells - k; j1 > 0; j1--){
-            for (int i1 = mVCells - l; i1 > 0; i1--)
-            {
-                cellToPoint(j1, i1, ai);
-                double d1 = Math.pow(ai[0] - i, 2D) + Math.pow(ai[1] - j, 2D);
-                if (d1 < d && (flag || !isCellOccupied(j1, i1, k, l))) {
-                    d = d1;
-                    pos[0] = j1;
-                    pos[1] = i1;
-                }
-            }
-        }
-        
-        if (d >= 1.7976931348623157E+308D){
-            pos = null;
-        }
-        
-        return pos;
-
-    }
-
-    int[] findNearestVacantAreaByCellPos(int i, int j, int k, int l, boolean flag)
-    {
-        cellToPoint(i, j, mCellXY);
-        return findNearestVacantArea(mCellXY[0], mCellXY[1], k, l, flag);
     }
     
     @Override
@@ -751,27 +711,91 @@ public class CellLayout extends ViewGroup
         return mWidthGap;
     }
     
-    boolean isCellOccupied(int i, int j, int k, int l) {
-        boolean flag;
-        int i1; 
-        for (i1 = 0; i1 < k; i1++) {
-            for (int j1 = 0; j1 < l; j1++) {
-                if (mOccupiedCell[i + i1][j + j1] != null)
+    /**
+     * 功能： 判定是否所需要的单元格被占用， 传入CX CY 位置及SX SY来计算大小
+     * @param cx
+     * @param cy
+     * @param sx
+     * @param sy
+     * @return
+     */
+    public boolean isCellOccupied(int cx, int cy, int sx, int sy) {
+        boolean bOccupied = false;
+
+        for (int mx = 0; mx < sx; mx++) {
+            for (int my = 0; my < sy; my++) {
+                // 如果发现其中一个单元格被占用则立即退出
+                if (mOccupiedCell[cx + mx][cy + my] != null){
+                    bOccupied = true;
                     break;
+                }
             }   
         }
-        if (i1 >= k) {
-            flag = false;
-        } else {
-            flag = true;
-        }
-        return flag;
+        return bOccupied;
     }
     
+    /**
+     * 功能： 返回最后被占用的单元格
+     * @return
+     */
     public boolean lastDownOnOccupiedCell() {
         return mLastDownOnOccupiedCell;
     }
+    
+    /**
+     * 功能： 将单元格对应的位置转换成实际的XY坐标值
+     * @param cx
+     * @param cy
+     * @param cellxy
+     */
+    public void cellToPoint(int cx, int cy, int cellxy[]) {
+        cellxy[0] = mPaddingLeft + cx * (mCellWidth + mWidthGap);
+        cellxy[1] = mPaddingTop + cy * (mCellHeight + mHeightGap);
+    }
+    
+    /**
+     * 功能： 找到最近的空置区域
+     * @param pixelX  x 向的实际坐标，非单元格x
+     * @param pixelY  y 向坐标
+     * @param sx cell info 所占横向单元格 
+     * @param sy 纵向单元格
+     * @param flag
+     * @return
+     */
+    public int[] findNearestVacantArea(int pixelX, int pixelY, int sx, int sy, boolean ignoreOccupied) {
+        // 如果横*纵大于剩余的单元格则退出
+        if (!ignoreOccupied && sx * sy > mEmptyCellNumber) {
+            return null;
+        }
+        
+        double bestDistance = Double.MAX_VALUE;
+        int pos[] = new int[2];
+        
+        // 计算最近的距离及得到CX CY数组
+        for (int cx = 0; cx <= mHCells - sx; cx++){
+            for (int cy = 0; cy <= mVCells - sy; cy++) {
+                cellToPoint(cx, cy, mCellXY);
+                double distance = Math.pow(mCellXY[0] - pixelX, 2D) + Math.pow(mCellXY[1] - pixelY, 2D);
+                if (distance < bestDistance && (ignoreOccupied || !isCellOccupied(cx, cy, sx, sy))) {
+                    bestDistance = distance;
+                    pos[0] = cx;
+                    pos[1] = cy;
+                }
+            }
+        }
+        
+        if (bestDistance == Double.MAX_VALUE){
+            pos = null;
+        }
+        
+        return pos;
 
+    }
+
+    public int[] findNearestVacantAreaByCellPos(int cx, int cy, int sx, int sy, boolean flag) {
+        cellToPoint(cx, cy, mCellXY);
+        return findNearestVacantArea(mCellXY[0], mCellXY[1], sx, sy, flag);
+    }
     /**
      * 功能： 计算各项的位置
      * @param view
@@ -829,22 +853,29 @@ public class CellLayout extends ViewGroup
         }
     }
 
-    void onDragOver(DropTarget.DragObject dragobject) {
-        int j = dragobject.dragInfo.spanX;
-        int i = dragobject.dragInfo.spanY;
-        int ai[] = findNearestVacantArea(dragobject.x - dragobject.xOffset, dragobject.y - dragobject.yOffset, j, i, false);
-        if (ai != null) {
+    /**
+     * 功能： 拖动over事件处理
+     * @param dragobject
+     */
+    public void onDragOver(DropTarget.DragObject dragobject) {
+        // 得到sx sy
+        int sx = dragobject.dragInfo.spanX;
+        int sy = dragobject.dragInfo.spanY;
+        
+        int pos[] = findNearestVacantArea(dragobject.x - dragobject.xOffset, dragobject.y - dragobject.yOffset, sx, sy, false);
+        
+        if (pos != null) {
             removeView(mCellBackground);
             if (mLastCoveringView == null) {
                 LayoutParams layoutparams = (LayoutParams)mCellBackground.getLayoutParams();
-                layoutparams.cellX = ai[0];
-                layoutparams.cellY = ai[1];
-                layoutparams.cellHSpan = j;
-                layoutparams.cellVSpan = i;
+                layoutparams.cellX = pos[0];
+                layoutparams.cellY = pos[1];
+                layoutparams.cellHSpan = sx;
+                layoutparams.cellVSpan = sy;
                 addView(mCellBackground, 0, layoutparams);
                 if (dragobject.dragSource != mLauncher.getWorkspace()) {
-                    dragobject.dragInfo.cellX = ai[0];
-                    dragobject.dragInfo.cellY = ai[1];
+                    dragobject.dragInfo.cellX = pos[0];
+                    dragobject.dragInfo.cellY = pos[1];
                 }
             }
         }

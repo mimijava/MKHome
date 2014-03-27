@@ -52,21 +52,17 @@ import android.preference.PreferenceManager;
 import android.util.Log;
 import android.view.Display;
 import android.view.HapticFeedbackConstants;
-import android.view.LayoutInflater;
 import android.view.Surface;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.ViewRootImpl;
 import android.view.Window;
 import android.view.View.OnClickListener;
 import android.view.View.OnLongClickListener;
 import android.view.WindowManager;
-import android.view.WindowManagerGlobal;
 import android.view.animation.Animation;
 import android.view.animation.AnimationUtils;
 import android.view.animation.LinearInterpolator;
 import android.view.inputmethod.InputMethodManager;
-import android.widget.FrameLayout;
 import android.widget.Toast;
 
 public class Launcher extends Activity implements OnClickListener,
@@ -162,6 +158,8 @@ public class Launcher extends Activity implements OnClickListener,
     private DragController mDragController;
     private Workspace mWorkspace;
     private ValueAnimator mDimAnim;
+    
+    // 整个桌面内容显示区，主要用于处理桌面与桌面缩略图直接切换
     private View mScreen;
     
     // HOTSEAT区域
@@ -458,9 +456,15 @@ public class Launcher extends Activity implements OnClickListener,
     }
     
     @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        // TODO Auto-generated method stub
-        super.onActivityResult(requestCode, resultCode, data);
+    public void startActivityForResult(Intent intent, int requestCode, Bundle bundle) {
+        mWaitingForResult = true;
+        super.startActivityForResult(intent, requestCode, bundle);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent intent) {
+        mWaitingForResult = false;
+        super.onActivityResult(requestCode, resultCode, intent);
     }
 
     @Override
@@ -525,6 +529,9 @@ public class Launcher extends Activity implements OnClickListener,
         finishLoading();
     }
 
+    /**
+     * 功能： 响应长按时间
+     */
     @Override
     public boolean onLongClick(View view) {
         boolean flag;
@@ -537,11 +544,13 @@ public class Launcher extends Activity implements OnClickListener,
                 if (mWorkspace.allowLongPress()){
                     if (cellinfo.cell != null) {
                         if (!(cellinfo.cell instanceof Folder)) {
+                            // 如果目标不是文件夹，则开始拖动
                             mWorkspace.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS, 
                                     HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING);
                             mWorkspace.startDrag(cellinfo);
                         }
                     } else {
+                        // 进入编辑模式
                         int editState;
                         if (!isInEditing()) {
                             editState = 8;
@@ -1330,7 +1339,7 @@ public class Launcher extends Activity implements OnClickListener,
         mDimAnim.start();
     }
     
-    boolean closeFolder() {
+    public boolean closeFolder() {
         return closeFolder(true);
     }
 
@@ -1339,19 +1348,23 @@ public class Launcher extends Activity implements OnClickListener,
      * @param bClose
      * @return
      */
-    boolean closeFolder(boolean bClose) {
+    public boolean closeFolder(boolean bClose) {
         boolean flag;
         if (!mFolderCling.isOpened()) {
             flag = false;
         } else {
             mFolderCling.close(bClose);
             mDimAnim.cancel();
-            float ai[] = new float[]{0.3F, 1F};
-            mDimAnim.setFloatValues(ai);
+            mDimAnim.setFloatValues(0.3f, 1.0f);
             mDimAnim.start();
             flag = true;
         }
         return flag;
+    }
+    
+    public void closeSystemDialogs() {
+        getWindow().closeAllPanels();
+        mWaitingForResult = false;
     }
     
     public void removeAppWidget(LauncherAppWidgetInfo launcherappwidgetinfo) {
@@ -1395,8 +1408,11 @@ public class Launcher extends Activity implements OnClickListener,
         
     }
     
-    public void setEditingState(int state)
-    {
+    /**
+     * 功能： 编辑模式
+     * @param state
+     */
+    public void setEditingState(int state) {
         boolean flag = true;
         if (state != mEditingState 
             && !mWorkspace.inEditingModeAnimating() 

@@ -57,19 +57,10 @@ public class FolderCling extends FrameLayout
         setClipToPadding(false);
     }
 
-    void bind(FolderInfo folderinfo) {
+    public void bind(FolderInfo folderinfo) {
         mFolder.bind(folderinfo);
     }
 
-    void close(boolean bClose) {
-        mDragController.removeDropTarget(this);
-        mFolder.onClose(bClose, mOnFinishClose);
-    }
-
-    boolean isOpened() {
-        return mOpened;
-    }
-    
     @Override
     public void onClick(View v) {
          mLauncher.closeFolder();
@@ -150,19 +141,39 @@ public class FolderCling extends FrameLayout
         }
     }
     
-    void open() {
+    /**
+     * 功能： 打开文件夹
+     */
+    public void open() {
         setVisibility(View.VISIBLE);
         mDragController.addDropTarget(this);
         mFolder.onOpen(true);
         mOpened = true;
     }
     
+    /**
+     * 功能： 关闭文件夹
+     * @param bClose
+     */
+    public void close(boolean bClose) {
+        mDragController.removeDropTarget(this);
+        mFolder.onClose(bClose, mOnFinishClose);
+    }
+
+    /**
+     * 功能： 文件夹是否打开
+     * @return
+     */
+    public boolean isOpened() {
+        return mOpened;
+    }
+
     public void setDragController(DragController dragcontroller) {
         mFolder.setDragController(dragcontroller);
         mDragController = dragcontroller;
     }
 
-    void setLauncher(Launcher launcher) {
+    public void setLauncher(Launcher launcher) {
         mLauncher = launcher;
         mFolder.setLauncher(launcher);
     }

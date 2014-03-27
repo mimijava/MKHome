@@ -653,18 +653,6 @@ public class Workspace extends DragableScreenView
         }
     }
 
-    public boolean acceptDrop(DropTarget.DragObject dragobject)
-    {
-        boolean flag;
-        if (isDropAllow(dragobject)) {
-            flag = true;
-        } else {
-            mLauncher.showError(R.string.failed_to_drop);
-            flag = false;
-        }
-        return flag;
-    }
-
     public void addFocusables(ArrayList<View> arraylist, int i, int j) {
         if (mLauncher.getCurrentOpenedFolder() == null && getScreenCount() > 0) {
             getScreen(mCurrentScreen).addFocusables(arraylist, i);
@@ -751,26 +739,32 @@ public class Workspace extends DragableScreenView
         updateWallpaperOffset();
     }
     
-    public boolean createUserFolderWithDragOverlap(ShortcutInfo shortcutinfo, ShortcutInfo shortcutinfo1) {
-        CellLayout cellLayout = getCellLayout(getScreenIndexById(shortcutinfo1.screenId));
+    /**
+     * 功能： 拖动图标后，如果两图标叠加则创建文件夹
+     * @param dragShortcutInfo
+     * @param orgShortcutInfo
+     * @return
+     */
+    public boolean createUserFolderWithDragOverlap(ShortcutInfo dragShortcutInfo, ShortcutInfo orgShortcutInfo) {
+        CellLayout cellLayout = getCellLayout(getScreenIndexById(orgShortcutInfo.screenId));
         if (cellLayout != null) {
-            int ai[] = mTempCell;
             FolderIcon foldericon = null;
-            if (cellLayout.getChildVisualPosByTag(shortcutinfo1, ai)){
-                foldericon = mLauncher.createNewFolder(shortcutinfo1.screenId, ai[0], ai[1]);
+            if (cellLayout.getChildVisualPosByTag(orgShortcutInfo, mTempCell)){
+                // 在org位置创建文件夹
+                foldericon = mLauncher.createNewFolder(orgShortcutInfo.screenId, mTempCell[0], mTempCell[1]);
             }
             boolean flag;
             if (foldericon != null) {
-                shortcutinfo1.cellX = ai[0];
-                shortcutinfo1.cellY = ai[1];
-                cellLayout.removeChild(shortcutinfo1);
+                orgShortcutInfo.cellX = mTempCell[0];
+                orgShortcutInfo.cellY = mTempCell[1];
+                cellLayout.removeChild(orgShortcutInfo);
                 cellLayout.clearBackupLayout();
-                addInScreen(foldericon, shortcutinfo1.screenId, ai[0], ai[1], 1, 1);
+                addInScreen(foldericon, orgShortcutInfo.screenId, mTempCell[0], mTempCell[1], 1, 1);
                 FolderInfo folderInfo = (FolderInfo)foldericon.getTag();
-                LauncherModel.addOrMoveItemInDatabase(mLauncher, shortcutinfo1, folderInfo.id, -1L, 0, 0);
-                folderInfo.add(shortcutinfo1);
-                LauncherModel.addOrMoveItemInDatabase(mLauncher, shortcutinfo, folderInfo.id, -1L, 1, 0);
-                folderInfo.add(shortcutinfo);
+                LauncherModel.addOrMoveItemInDatabase(mLauncher, orgShortcutInfo, folderInfo.id, -1L, 0, 0);
+                folderInfo.add(orgShortcutInfo);
+                LauncherModel.addOrMoveItemInDatabase(mLauncher, dragShortcutInfo, folderInfo.id, -1L, 1, 0);
+                folderInfo.add(dragShortcutInfo);
                 folderInfo.notifyDataSetChanged();
                 foldericon.onDragExit(null);
                 flag = true;
@@ -779,19 +773,22 @@ public class Workspace extends DragableScreenView
             }
             return flag;
         }
-        StringBuilder stringbuilder = new StringBuilder();
-        stringbuilder.append("overItem.screenId=").append(shortcutinfo1.screenId);
-        stringbuilder.append(",currScreenId=").append(getCurrentScreenId());
-        stringbuilder.append(",mScreenIdMap=");
-        for (int i = 0; i < mScreenIdMap.size(); i++) {
-            long l = mScreenIdMap.keyAt(i);
-            stringbuilder.append(l).append(":");
-            stringbuilder.append(mScreenIdMap.get(l));
+        if (LOGD) {
+            StringBuilder stringbuilder = new StringBuilder();
+            stringbuilder.append("overItem.screenId=").append(orgShortcutInfo.screenId);
+            stringbuilder.append(",currScreenId=").append(getCurrentScreenId());
+            stringbuilder.append(",mScreenIdMap=");
+            for (int i = 0; i < mScreenIdMap.size(); i++) {
+                long l = mScreenIdMap.keyAt(i);
+                stringbuilder.append(l).append(":");
+                stringbuilder.append(mScreenIdMap.get(l));
+            }
+            Log.d(TAG, stringbuilder.toString());
         }
-        throw new NullPointerException(stringbuilder.toString());
+        return false;
     }
     
-    void deleteScreen(long l) {
+    public void deleteScreen(long l) {
         int screenCount;
         if (!isInNormalEditingMode()) {
             screenCount = getScreenCount();
@@ -824,29 +821,30 @@ public class Workspace extends DragableScreenView
         }
     }
     
-    void onEditModeEnterComplate() {
+    /**
+     * 模式： 进入编辑模式
+     */
+    public void onEditModeEnterComplete() {
         mEditingModeAnimating = false;
-        int i = 0;
-        while(i < getScreenCount()){
+        for (int i = 0; i < getScreenCount(); i++) {
             CellScreen cellscreen = getCellScreen(i);
             if (cellscreen != null){
                 cellscreen.onEditingAnimationEnterEnd();
             }
-            i++;
         }
     }
 
-    void onEditModeExitComplate()
-    {
+    /**
+     * 模式： 退出编辑模式
+     */
+    public void onEditModeExitComplete() {
         mEditingModeAnimating = false;
         setScreenTransitionType(mOldTransitionType);
-        int i = 0;
-        while (i >= getScreenCount()){
+        for (int i = 0; i < getScreenCount(); i++) {
             CellScreen cellscreen = getCellScreen(i);
             if (cellscreen != null) {
                 cellscreen.onEditingAnimationExitEnd();
             }
-            i++;
         }
     }
     
@@ -961,27 +959,64 @@ public class Workspace extends DragableScreenView
     }
     
     @Override
+    public boolean dispatchTouchEvent(MotionEvent ev) {
+        int point = ev.getPointerCount();
+        if (!mEditingModeAnimating && !mThumbnailView.isShowing() 
+                && getTouchState() == TOUCH_STATE_REST && 3 == point){
+            if (mLastTouchPointerCount == point) {
+                if (!mLauncher.isInEditing() && 0.7F * mInitThreePinchSize > getThreePinchSize(ev)) {
+                    finishCurrentGesture();
+                    mLauncher.showPreview(true);
+                }
+            } else {
+                mInitThreePinchSize = getThreePinchSize(ev);
+            }
+        }
+        mLastTouchPointerCount = point;
+        boolean flag;
+        if (ev.getAction() != MotionEvent.ACTION_DOWN || !mLauncher.isWorkspaceLocked()){
+            flag = super.dispatchTouchEvent(ev);
+        } else {
+            flag = false;
+        }
+        return flag;
+    }
+    
+    @Override
     public boolean onInterceptTouchEvent(MotionEvent ev) {
         boolean flag = false;
         if (!mLauncher.isWorkspaceLocked() && !mLauncher.isFolderShowing()) {
-            switch (0xff & ev.getAction()) {
+            switch (MotionEvent.ACTION_MASK & ev.getAction()) {
             case MotionEvent.ACTION_MOVE: // '\002'
             default:
                 break;
 
             case MotionEvent.ACTION_UP: // '\001'
             case MotionEvent.ACTION_CANCEL: // '\003'
-                if (getTouchState() == 0 && !getCellLayout(mCurrentScreen).lastDownOnOccupiedCell()) {
-                    getLocationOnScreen(mTempCell);
-                    mWallpaperManager.sendWallpaperCommand(getWindowToken(), 
-                            "android.wallpaper.tap", mTempCell[0] + (int)ev.getX(0),
-                            mTempCell[1] + (int)ev.getY(0), 0, null);
+                if (getTouchState() == TOUCH_STATE_REST
+                    && !getCellLayout(mCurrentScreen).lastDownOnOccupiedCell()) {
+                    // 按的位置为壁纸位置，没有按到明确的项目目标
+                    onWallpaperTap(ev);
                 }
                 break;
             }
             flag = super.onInterceptTouchEvent(ev);
         }
         return flag;
+    }
+    
+    protected void onWallpaperTap(MotionEvent ev) {
+        final int[] position = mTempCell;
+        getLocationOnScreen(position);
+
+        int pointerIndex = ev.getActionIndex();
+        position[0] += (int) ev.getX(pointerIndex);
+        position[1] += (int) ev.getY(pointerIndex);
+
+        mWallpaperManager.sendWallpaperCommand(getWindowToken(),
+                ev.getAction() == MotionEvent.ACTION_UP
+                        ? WallpaperManager.COMMAND_TAP : WallpaperManager.COMMAND_SECONDARY_TAP,
+                position[0], position[1], 0, null);
     }
 
     @Override
@@ -1193,30 +1228,6 @@ public class Workspace extends DragableScreenView
         super.focusableViewAvailable(v);
     }
 
-    @Override
-    public boolean dispatchTouchEvent(MotionEvent ev) {
-        int i = ev.getPointerCount();
-        if (!mEditingModeAnimating && !mThumbnailView.isShowing() 
-                && getTouchState() == 0 && 3 == i){
-            if (mLastTouchPointerCount == i) {
-                if (!mLauncher.isInEditing() && 0.7F * mInitThreePinchSize > getThreePinchSize(ev)) {
-                    finishCurrentGesture();
-                    mLauncher.showPreview(true);
-                }
-            } else {
-                mInitThreePinchSize = getThreePinchSize(ev);
-            }
-        }
-        mLastTouchPointerCount = i;
-        boolean flag;
-        if (ev.getAction() != MotionEvent.ACTION_DOWN || !mLauncher.isWorkspaceLocked()){
-            flag = super.dispatchTouchEvent(ev);
-        } else {
-            flag = false;
-        }
-        return flag;
-    }
-
     public CellLayout getCellLayout(int index) {
         CellScreen cellScreen = getCellScreen(index);
         CellLayout cellLayout;
@@ -1381,8 +1392,11 @@ public class Workspace extends DragableScreenView
         reorderScreens();
     }
     
-    public boolean inEditingModeAnimating()
-    {
+    /**
+     * 描述： 不处于编辑动画的显示过程中
+     * @return
+     */
+    public boolean inEditingModeAnimating() {
         return mEditingModeAnimating;
     }
 
@@ -1424,7 +1438,17 @@ public class Workspace extends DragableScreenView
         getScreen(i).requestFocus();
     }
 
-    
+    @Override
+    public boolean acceptDrop(DropTarget.DragObject dragobject) {
+        boolean flag;
+        if (isDropAllow(dragobject)) {
+            flag = true;
+        } else {
+            mLauncher.showError(R.string.failed_to_drop);
+            flag = false;
+        }
+        return flag;
+    }
     
     @Override
     public DropTarget getDropTargetDelegate(DragObject dragobject) {
@@ -1446,7 +1470,7 @@ public class Workspace extends DragableScreenView
         if (mInDraggingMode){
             mInDraggingMode = false;
         }
-        mLastDragScreenID = -1L;
+        mLastDragScreenID = INVALID_SCREEN;
         getCurrentCellScreen().onDragExit(dragobject);
     }
 
@@ -1456,8 +1480,9 @@ public class Workspace extends DragableScreenView
             CellScreen cellscreen = getCurrentCellScreen();
             CellLayout celllayout = cellscreen.getCellLayout();
             if (mLastDragScreenID != cellscreen.getCellLayout().getScreenId()) {
-                if (mLastDragScreenID != -1L)
+                if (mLastDragScreenID != INVALID_SCREEN){
                     getCellScreen(getScreenIndexById(mLastDragScreenID)).onDragExit(dragobject);
+                }
                 cellscreen.onDragEnter(dragobject);
                 mLastDragScreenID = celllayout.getScreenId();
             }
@@ -1579,8 +1604,13 @@ public class Workspace extends DragableScreenView
         
     }
     
+    /**
+     * 功能： 长按进入拖动项目
+     * @param cellinfo
+     */
     void startDrag(CellLayout.CellInfo cellinfo) {
         View view = cellinfo.cell;
+        // 没有文件夹打开
         if (view.isInTouchMode() && !mLauncher.isFolderShowing()) {
             mDragInfo = cellinfo;
             view.clearFocus();

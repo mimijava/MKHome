@@ -63,9 +63,9 @@ public class CellScreen extends FrameLayout
                 ViewParent viewparent = getParent();
                 if (viewparent instanceof Workspace)
                     if (!mInEditing){
-                        ((Workspace)viewparent).onEditModeExitComplate();
+                        ((Workspace)viewparent).onEditModeExitComplete();
                     } else {
-                        ((Workspace)viewparent).onEditModeEnterComplate();
+                        ((Workspace)viewparent).onEditModeEnterComplete();
                     }
             }
             
@@ -165,17 +165,17 @@ public class CellScreen extends FrameLayout
         }
     }
 
-    void onDragEnter(DropTarget.DragObject dragobject) {
+    public void onDragEnter(DropTarget.DragObject dragobject) {
         mCellLayout.onDragEnter(dragobject);
     }
 
-    void onDragExit(DropTarget.DragObject dragobject) {
+    public void onDragExit(DropTarget.DragObject dragobject) {
         if (isEditingNewScreenMode())
             mNewButton.setSelected(false);
         mCellLayout.onDragExit(dragobject);
     }
 
-    void onDragOver(DropTarget.DragObject dragobject) {
+    public void onDragOver(DropTarget.DragObject dragobject) {
         if (!isEditingNewScreenMode()) {
             translateTouch(dragobject);
             mCellLayout.onDragOver(dragobject);
@@ -184,34 +184,34 @@ public class CellScreen extends FrameLayout
         }
     }
 
-    boolean onDrop(DropTarget.DragObject dragobject, View view) {
+    public boolean onDrop(DropTarget.DragObject dragobject, View view) {
         translateTouch(dragobject);
         return mCellLayout.onDrop(dragobject, view);
     }
 
-    void onEditingAnimationEnterEnd() {
+    public void onEditingAnimationEnterEnd() {
         if (!Launcher.isHardwareAccelerated()) {
-            setLayerType(1, mMyCachePaint);
+            setLayerType(View.LAYER_TYPE_SOFTWARE, mMyCachePaint);
             setDrawingCacheEnabled(true);
             mBackgroundContainer.setDrawingCacheEnabled(false);
             mCellLayout.setDrawingCacheEnabled(false);
         }
     }
 
-    void onEditingAnimationEnterStart() {
+    public void onEditingAnimationEnterStart() {
         if (!Launcher.isHardwareAccelerated()) {
-            setLayerType(1, null);
+            setLayerType(View.LAYER_TYPE_SOFTWARE, null);
             setDrawingCacheEnabled(false);
             mBackgroundContainer.setDrawingCacheEnabled(true);
             mCellLayout.setDrawingCacheEnabled(true);
             mBackgroundContainer.getDrawingCache(true);
             mCellLayout.getDrawingCache(true);
         } else {
-            setLayerType(0, null);
+            setLayerType(View.LAYER_TYPE_NONE, null);
         }
     }
 
-    void onEditingAnimationExitEnd() {
+    public void onEditingAnimationExitEnd() {
         mCellLayout.clearAnimation();
         if (Launcher.isHardwareAccelerated()) {
             updateLayerType();
@@ -222,9 +222,9 @@ public class CellScreen extends FrameLayout
         }
     }
 
-    void onEditingAnimationExitStart() {
+    public void onEditingAnimationExitStart() {
         if (!Launcher.isHardwareAccelerated()) {
-            setLayerType(1, null);
+            setLayerType(View.LAYER_TYPE_SOFTWARE, null);
             setDrawingCacheEnabled(false);
             mBackgroundContainer.setDrawingCacheEnabled(true);
             mCellLayout.setDrawingCacheEnabled(true);
@@ -232,6 +232,7 @@ public class CellScreen extends FrameLayout
             mCellLayout.getDrawingCache(true);
         }
     }
+    
     @Override
     protected void onFinishInflate() {
         mCellLayout = (CellLayout)findViewById(R.id.cell_layout);
@@ -271,7 +272,7 @@ public class CellScreen extends FrameLayout
         return false;
     }
     
-    void onQuickEditingModeChanged(boolean flag) {
+    public void onQuickEditingModeChanged(boolean flag) {
         if (Launcher.isHardwareAccelerated()){
             if (!flag){
                 updateLayerType();
@@ -378,7 +379,7 @@ public class CellScreen extends FrameLayout
         }
     }
 
-    void translateTouch(DropTarget.DragObject dragobject) {
+    public void translateTouch(DropTarget.DragObject dragobject) {
         if (mInEditing) {
             dragobject.x = (int)translateTouchX(dragobject.x);
             dragobject.y = (int)translateTouchY(dragobject.y);
@@ -411,7 +412,7 @@ public class CellScreen extends FrameLayout
         mCellLayout.clearCellBackground();
     }
 
-    void updateVision() {
+    public void updateVision() {
         setTag(R.id.celllayout_thumbnail_for_workspace_preview_dirty, Boolean.valueOf(true));
         setTag(R.id.celllayout_thumbnail_for_workspace_editing_preview_dirty, Boolean.valueOf(true));
     }
