@@ -63,4 +63,12 @@
     <item type="id" name="txtName"></item>
     <item type="id" name="txtSize"></item>
     <item type="id" name="imgPreview"></item>
+    
+    <item type="id" name="error_display"></item>
+    <item type="id" name="gadget_icon"></item>
+    <item type="id" name="searcher_button"></item>
+    
+    <item type="id" name="clock_left"></item>
+    <item type="id" name="clock_right"></item>
+    <item type="id" name="clock_bottom_bar"></item>
 </resources>

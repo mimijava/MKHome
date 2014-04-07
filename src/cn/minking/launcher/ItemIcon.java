@@ -68,29 +68,36 @@ public abstract class ItemIcon extends FrameLayout
     
     public void setCompactViewMode(boolean flag){
         mIsCompact = flag;
-        if (flag) {
+        if (!mIsCompact) {
             mTitle.setVisibility(View.VISIBLE);
         }else {
             mTitle.setVisibility(View.GONE);
         }
     }
 
+    /**
+     * 功能： 创建图标的阴影
+     * @param width
+     * @param height
+     * @param bitmap
+     * @return
+     */
     private Bitmap createShadowBackground(int width, int height, Bitmap bitmap){
-        Bitmap bitmap1 = Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888);
-        if (bitmap1 != null){
-            Canvas canvas = new Canvas(bitmap1);
+        Bitmap bgBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        if (bgBitmap != null){
+            Canvas canvas = new Canvas(bgBitmap);
             canvas.drawColor(0, android.graphics.PorterDuff.Mode.CLEAR);
             Paint paint = new Paint();
             float radius = getContext().getResources().getDimension(R.dimen.icon_shadow_size);
-            paint.setMaskFilter(new BlurMaskFilter(radius, android.graphics.BlurMaskFilter.Blur.INNER));
-            Bitmap bitmap2 = bitmap.extractAlpha(paint, null);
+            paint.setMaskFilter(new BlurMaskFilter(radius, BlurMaskFilter.Blur.INNER));
+            Bitmap alphaBitmap = bitmap.extractAlpha(paint, null);
             paint = new Paint();
             paint.setColor(0);
             paint.setShadowLayer(radius, 1F, radius, getContext().getResources().getColor(R.color.icon_shadow));
-            canvas.drawBitmap(bitmap2, mIconContainer.getLeft(), mIconContainer.getTop(), paint);
-            bitmap2.recycle();
+            canvas.drawBitmap(alphaBitmap, mIconContainer.getLeft(), mIconContainer.getTop(), paint);
+            alphaBitmap.recycle();
         }
-        return bitmap1;
+        return bgBitmap;
     }
     
     private Drawable getRemoteResourceDrawable(String packageName){

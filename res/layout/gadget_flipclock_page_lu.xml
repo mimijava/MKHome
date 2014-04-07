@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<cn.minking.launcher.gadget.FlipPage 
+    android:layout_gravity="top|left|center" 
+    android:clipToPadding="false" 
+    android:layout_width="wrap_content" 
+    android:layout_height="wrap_content"
+  	xmlns:android="http://schemas.android.com/apk/res/android">
+    <ImageView android:id="@id/clock_left" 
+        android:layout_gravity="bottom|left|center" 
+        android:layout_width="wrap_content" 
+        android:layout_height="wrap_content" />
+    <ImageView android:id="@id/clock_right" 
+        android:layout_gravity="bottom|right|center" 
+        android:layout_width="wrap_content" 
+        android:layout_height="wrap_content" />
+</cn.minking.launcher.gadget.FlipPage>

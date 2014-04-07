@@ -125,17 +125,6 @@ public class DragLayer extends FrameLayout {
         mScreenSize = new Point();
         mScaledUpsideScreenOutTouch = (int)(getResources().getDisplayMetrics().density * (float)mScaledUpsideScreenOutTouch);
     }
-    
-    private void animateViewIntoPosition(View view, int i, int j, int k, int l, float f, Runnable runnable, 
-            boolean flag, int i1) {
-        Rect rect = new Rect(i, j, i + view.getMeasuredWidth(), j + view.getMeasuredHeight());
-        Rect rect1 = new Rect(k, l, k + view.getMeasuredWidth(), l + view.getMeasuredHeight());
-        DragController.TouchTranslator touchtranslator = mLauncher.getTouchTranslator();
-        if (touchtranslator != null) {
-            touchtranslator.translatePosition(rect1);
-        }
-        animateView(view, rect, rect1, 1F, (f * (float)rect1.height()) / (float)rect.height(), i1, null, null, runnable, false);
-    }
 
     private void fadeOutDragView() {
         mFadeOutAnim = new ValueAnimator();
@@ -178,60 +167,72 @@ public class DragLayer extends FrameLayout {
         appwidgetresizeframe.snapToWidget(false);
     }
 
+    /**
+     * 功能： 动画显示View
+     * @param view
+     * @param from
+     * @param to
+     * @param finalAlpha
+     * @param finalScale
+     * @param duration
+     * @param motionInterpolator
+     * @param alphaInterpolator
+     * @param onCompleteRunnable
+     * @param fadeOut
+     */
     public void animateView(final View view, final Rect from, final Rect to, 
             final float finalAlpha, final float finalScale, 
-            int i, final Interpolator motionInterpolator, 
+            int duration, 
+            final Interpolator motionInterpolator, 
             final Interpolator alphaInterpolator, 
-            final Runnable onCompleteRunnable, final boolean fadeOut) {
-        float f = (float)Math.sqrt(Math.pow(to.left - from.left, 2D) + Math.pow(to.top - from.top, 2D));
-        Resources resources = getResources();
-        final float initialAlpha = resources.getInteger(R.integer.config_dropAnimMaxDist);
-        if (i < 0) {
-            i = resources.getInteger(R.integer.config_dropAnimMaxDuration);
-            if (f < initialAlpha){
-                i = (int)((float)i * mCubicEaseOutInterpolator.getInterpolation(f / initialAlpha));
+            final Runnable onCompleteRunnable, 
+            final boolean fadeOut) {
+        // 计算两个对象之间的直线距离
+        final float dist = (float)Math.sqrt(Math.pow(to.left - from.left, 2) + Math.pow(to.top - from.top, 2));
+        Resources res = getResources();
+        final float maxDist = res.getInteger(R.integer.config_dropAnimMaxDist);
+        
+        if (duration < 0) {
+            duration = res.getInteger(R.integer.config_dropAnimMaxDuration);
+            if (dist < maxDist){
+                duration = (int)((float)duration * mCubicEaseOutInterpolator.getInterpolation(dist / maxDist));
             }
         }
+        
         if (mDropAnim != null){
             mDropAnim.cancel();
         }
         if (mFadeOutAnim != null){
             mFadeOutAnim.cancel();
         }
+        
         mDropView = view;
         mDropAnim = new ValueAnimator();
         if (alphaInterpolator == null || motionInterpolator == null){
             mDropAnim.setInterpolator(mCubicEaseOutInterpolator);
         }
-        mDropAnim.setDuration(i);
-       
-        float af[] = new float[]{0F,1F};
-        mDropAnim.setFloatValues(af);
+        mDropAnim.setDuration(duration);
+        mDropAnim.setFloatValues(0.0f, 1.0F);
         mDropAnim.removeAllUpdateListeners();
-        mDropAnim.addUpdateListener(new android.animation.ValueAnimator.AnimatorUpdateListener() {
+        mDropAnim.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
             @Override
             public void onAnimationUpdate(ValueAnimator valueanimator) {
-                float f2 = ((Float)valueanimator.getAnimatedValue()).floatValue();
-                int j = view.getMeasuredWidth();
-                int k = view.getMeasuredHeight();
-                invalidate(mDropViewPos[0], mDropViewPos[1], j + mDropViewPos[0], k + mDropViewPos[1]);
-                float f1;
-                if (alphaInterpolator != null){
-                    f1 = alphaInterpolator.getInterpolation(f2);
-                } else {
-                    f1 = f2;
-                }
-                float f3;
-                if (motionInterpolator != null){
-                    f3 = motionInterpolator.getInterpolation(f2);
-                } else {
-                    f3 = f2;
-                }
-                mDropViewPos[0] = from.left + Math.round(f3 * (float)(to.left - from.left));
-                mDropViewPos[1] = from.top + Math.round(f3 * (float)(to.top - from.top));
-                mDropViewScale = f2 * finalScale + (1F - f2);
-                mDropViewAlpha = f1 * finalAlpha + (1F - f1) * initialAlpha;
-                invalidate(mDropViewPos[0], mDropViewPos[1], j + mDropViewPos[0], k + mDropViewPos[1]);
+                float percent = ((Float)valueanimator.getAnimatedValue()).floatValue();
+                int width = view.getMeasuredWidth();
+                int height = view.getMeasuredHeight();
+                invalidate(mDropViewPos[0], mDropViewPos[1], width + mDropViewPos[0], height + mDropViewPos[1]);
+                
+                float alphaPercent = alphaInterpolator == null ? percent :
+                    alphaInterpolator.getInterpolation(percent);
+                float motionPercent = motionInterpolator == null ? percent :
+                    motionInterpolator.getInterpolation(percent);
+                
+                
+                mDropViewPos[0] = from.left + Math.round(motionPercent * (float)(to.left - from.left));
+                mDropViewPos[1] = from.top + Math.round(motionPercent * (float)(to.top - from.top));
+                mDropViewScale = percent * finalScale + (1.0f - percent);
+                mDropViewAlpha = alphaPercent * finalAlpha + (1.0f - alphaPercent) * maxDist;
+                invalidate(mDropViewPos[0], mDropViewPos[1], width + mDropViewPos[0], height + mDropViewPos[1]);
             }
         });
         mDropAnim.addListener(new AnimatorListenerAdapter() {
@@ -250,8 +251,36 @@ public class DragLayer extends FrameLayout {
         mDropAnim.start();
     }
 
+    
+    /**
+     * 功能： 动画显示移动View到指定的位置 
+     * @param view
+     * @param fromX
+     * @param fromY
+     * @param toX
+     * @param toY
+     * @param scale
+     * @param runnable
+     * @param flag
+     * @param duration
+     */
+    private void animateViewIntoPosition(View view, int fromX, int fromY, int toX, int toY, float scale, Runnable runnable, 
+            boolean flag, int duration) {
+        Rect rect = new Rect(fromX, fromY, fromX + view.getMeasuredWidth(), fromY + view.getMeasuredHeight());
+        Rect rect1 = new Rect(toX, toY, toX + view.getMeasuredWidth(), toY + view.getMeasuredHeight());
+        DragController.TouchTranslator touchtranslator = mLauncher.getTouchTranslator();
+        if (touchtranslator != null) {
+            touchtranslator.translatePosition(rect1);
+        }
+        animateView(view, rect, rect1, 1F, (scale * (float)rect1.height()) / (float)rect.height(), duration, null, null, runnable, false);
+    }
+
+    public void animateViewIntoPosition(DragView dragview, View view, Runnable runnable) {
+        animateViewIntoPosition(dragview, view, -1, runnable);
+    }
+    
     public void animateViewIntoPosition(DragView dragview, final View child,
-            int i, final Runnable onFinishAnimationRunnable) {
+            int duration, final Runnable onFinishAnimationRunnable) {
         if (!(child.getParent() instanceof CellLayout)) {
             child.setVisibility(View.VISIBLE);
             if (onFinishAnimationRunnable != null){
@@ -264,13 +293,13 @@ public class DragLayer extends FrameLayout {
             mTmpPos[1] = layoutparams.y;
             Rect rect = mTmpRect;
             getViewRectRelativeToSelf(dragview, rect);
-            float f = getDescendantCoordRelativeToSelf((View)child.getParent(), mTmpPos);
-            int l = mTmpPos[0];
-            int j = mTmpPos[1];
-            int k = rect.left;
-            int i1 = rect.top;
+            float scale = getDescendantCoordRelativeToSelf((View)child.getParent(), mTmpPos);
+            int toX = mTmpPos[0];
+            int toY = mTmpPos[1];
+            int fromX = rect.left;
+            int fromY = rect.top;
             child.setVisibility(View.INVISIBLE);
-            animateViewIntoPosition(((View) (dragview)), k, i1, l, j, f, new Runnable() {
+            animateViewIntoPosition(((View) (dragview)), fromX, fromY, toX, toY, scale, new Runnable() {
                 @Override
                 public void run() {
                     child.setVisibility(View.VISIBLE);
@@ -278,14 +307,10 @@ public class DragLayer extends FrameLayout {
                         onFinishAnimationRunnable.run();
                     }
                 }
-            }, false, i);
+            }, false, duration);
         }
     }
 
-    public void animateViewIntoPosition(DragView dragview, View view, Runnable runnable) {
-        animateViewIntoPosition(dragview, view, -1, runnable);
-    }
-    
     public void clearAllResizeFrames() {
         if (mResizeFrames.size() <= 0) return;
         Iterator<AppWidgetResizeFrame> iterator = mResizeFrames.iterator();

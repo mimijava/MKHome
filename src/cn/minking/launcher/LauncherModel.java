@@ -12,21 +12,16 @@ package cn.minking.launcher;
 import java.lang.ref.WeakReference;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.List;
-import java.util.Set;
 
 import cn.minking.launcher.AllAppsList.RemoveInfo;
+import cn.minking.launcher.gadget.GadgetFactory;
 import cn.minking.launcher.gadget.GadgetInfo;
 import cn.minking.launcher.upsidescene.SceneData;
-import android.R.anim;
-import android.R.integer;
-import android.app.ActionBar.Tab;
 import android.appwidget.AppWidgetManager;
+import android.appwidget.AppWidgetProviderInfo;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.ContentProviderClient;
@@ -37,7 +32,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.OperationApplicationException;
 import android.content.Intent.ShortcutIconResource;
-import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.pm.PackageManager.NameNotFoundException;
@@ -55,7 +49,6 @@ import android.os.Process;
 import android.os.RemoteException;
 import android.os.SystemClock;
 import android.text.TextUtils;
-import android.text.format.Time;
 import android.util.Log;
 
 public class LauncherModel extends BroadcastReceiver {
@@ -410,64 +403,51 @@ public class LauncherModel extends BroadcastReceiver {
                 });
             } 
             
-            int curScreen = oldCallbacks.getCurrentWorkspaceScreen();
             final ArrayList<LauncherAppWidgetInfo> appWidgetInfos = new ArrayList<LauncherAppWidgetInfo>(mAppWidgets);
-            int appWidgetSize = appWidgetInfos.size();
-            if ((curScreen != -1) && (appWidgetSize > 0)) {
-                final LauncherAppWidgetInfo firstAppWidgetInfo = appWidgetInfos.get(0);
-                if (firstAppWidgetInfo.screenId == 0){
-                    mHandler.post(new DataCarriedRunnable(appWidgetInfos) {
-                        @Override
-                        public void run() {
-                            Callbacks callbacks = tryGetCallbacks(oldCallbacks);
-                            if (callbacks != null){
-                                callbacks.bindAppWidget((LauncherAppWidgetInfo)mData);
-                            }
+            for (int i = 0; i < appWidgetInfos.size(); i++) {
+                final LauncherAppWidgetInfo launcherAppWidgetInfo = appWidgetInfos.get(i);
+                mHandler.post(new DataCarriedRunnable(launcherAppWidgetInfo) {
+                    @Override
+                    public void run() {
+                        Callbacks callbacks = tryGetCallbacks(oldCallbacks);
+                        if (callbacks != null){
+                            callbacks.bindAppWidget((LauncherAppWidgetInfo)mData);
                         }
-                    });
-                }
-            } else {
-                final ArrayList<GadgetInfo> gadgetInfos = new ArrayList<GadgetInfo>(mGadgets);
-                int gadgetSize = gadgetInfos.size();
-                int i = 0;
-                while (i < gadgetSize){
-                    GadgetInfo gadgetInfo = gadgetInfos.get(i);
-                    if (gadgetInfo.screenId != (long)curScreen){
-                        mHandler.post(new DataCarriedRunnable(gadgetInfo) {
-                            @Override
-                            public void run() {
-                                Callbacks callbacks = tryGetCallbacks(oldCallbacks);
-                                if (callbacks != null){
-                                    callbacks.bindGadget((GadgetInfo)mData);
-                                }
-                            }
-    
-    
-                        });
                     }
-                    i++;
-                }
-                
-                if (i >= gadgetSize){
-                    mHandler.post(new Runnable() {
-                        @Override
-                        public void run() {
-                            Callbacks callbacks = tryGetCallbacks(oldCallbacks);
-                            if (callbacks != null) {
-                                callbacks.finishBindingSavedItems();
-                            }
-                        }
-                    });
-                    
-                    mHandler.post(new Runnable() {
-                        @Override
-                        public void run() {
-                            Log.d(TAG, (new StringBuilder()).append("bind workspace in ").
-                                    append(SystemClock.uptimeMillis() - t).append("ms").toString());
-                        }
-                    });
-                }
+                });
             }
+        
+            final ArrayList<GadgetInfo> gadgetInfos = new ArrayList<GadgetInfo>(mGadgets);
+            for (int i = 0; i < gadgetInfos.size(); i++) {
+                final GadgetInfo gadgetInfo = gadgetInfos.get(i);
+                mHandler.post(new DataCarriedRunnable(gadgetInfo) {
+                    @Override
+                    public void run() {
+                        Callbacks callbacks = tryGetCallbacks(oldCallbacks);
+                        if (callbacks != null){
+                            callbacks.bindGadget((GadgetInfo)mData);
+                        }
+                    }
+                });
+            }
+            
+            mHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    Callbacks callbacks = tryGetCallbacks(oldCallbacks);
+                    if (callbacks != null) {
+                        callbacks.finishBindingSavedItems();
+                    }
+                }
+            });
+            
+            mHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    Log.d(TAG, (new StringBuilder()).append("bind workspace in ").
+                            append(SystemClock.uptimeMillis() - t).append("ms").toString());
+                }
+            });
         }
         
         /**
@@ -777,11 +757,61 @@ public class LauncherModel extends BroadcastReceiver {
         }
         
         private void loadAppWidget(Cursor cursor, ArrayList<Long> idList, ArrayList<ItemInfo> itemList){
+            // 找到各项在数据表中的Index值
+            final int idIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites._ID);
+            final int appWidgetIdIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.APPWIDGET_ID);
             
+            // 获取app widget id
+            final int appWidgetId = cursor.getInt(appWidgetIdIndex);
+            
+            AppWidgetProviderInfo aInfo = 
+                    AppWidgetManager.getInstance(mContext).getAppWidgetInfo(appWidgetId);
+            
+            if (aInfo != null && aInfo.provider != null && aInfo.provider.getPackageName() != null) {
+                LauncherAppWidgetInfo launcherAppWidgetInfo = new LauncherAppWidgetInfo(appWidgetId);
+                launcherAppWidgetInfo.id = cursor.getInt(idIndex);
+                launcherAppWidgetInfo.load(cursor);
+                launcherAppWidgetInfo.packageName = aInfo.provider.toShortString();
+                if (launcherAppWidgetInfo.container == LauncherSettings.Favorites.CONTAINER_DESKTOP) {
+                    if (isInvalidPosition(launcherAppWidgetInfo) 
+                            || !ensureItemUniquePostiton(mContext, Long.valueOf(launcherAppWidgetInfo.id), 4)) {
+                        itemList.add(launcherAppWidgetInfo);
+                    }
+                    mAppWidgets.add(launcherAppWidgetInfo);
+                } else {
+                    Log.e(TAG, "Widget found where container != CONTAINER_DESKTOP -- ignoring!");
+                }
+            } else  {
+                Log.e(TAG, (new StringBuilder()).append("Deleting widget that isn't installed anymore: id=").
+                        append(idIndex).append(" appWidgetId=").append(appWidgetIdIndex).toString());
+                if (!mManager.isSafeMode()) {
+                    idList.add(Long.valueOf(idIndex));
+                }
+            }
         }
         
         private void loadGadget(Cursor cursor, ArrayList<Long> idList, ArrayList<ItemInfo> itemList){
+            // 找到各项在数据表中的Index值
+            final int idIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites._ID);
+            final int appWidgetIdIndex = cursor.getColumnIndexOrThrow(LauncherSettings.Favorites.APPWIDGET_ID);
             
+            // 获取app widget id
+            final int appWidgetId = cursor.getInt(appWidgetIdIndex);
+            
+            if (GadgetFactory.getInfo(appWidgetId) != null) {
+                GadgetInfo gadgetinfo = new GadgetInfo(appWidgetId);
+                gadgetinfo.id = cursor.getLong(idIndex);
+                gadgetinfo.load(cursor);
+                if (isInvalidPosition(gadgetinfo) 
+                        || !ensureItemUniquePostiton(mContext, Long.valueOf(gadgetinfo.id), 5)) {
+                    itemList.add(gadgetinfo);
+                }
+                mGadgets.add(gadgetinfo);
+            } else {
+                if (!mManager.isSafeMode()) {
+                    idList.add(Long.valueOf(idIndex));
+                }
+            }
         }
         
         /**

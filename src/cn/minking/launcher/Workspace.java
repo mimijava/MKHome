@@ -437,17 +437,17 @@ public class Workspace extends DragableScreenView
         return Math.max(0, Math.min(getScreenIndexById(mDefaultScreenId), getScreenCount() - 1));
     }
 
-    private float[] getDragViewVisualCenter(int i, int j, int k, int l, 
+    private float[] getDragViewVisualCenter(int x, int y, int xOffset, int yOffset, 
             DragView dragview, float af[]) {
         if (af == null){
             af = new float[2];
         }
-        int i1 = i + getResources().getDimensionPixelSize(R.dimen.dragViewOffsetX);
-        int j1 = j + getResources().getDimensionPixelSize(R.dimen.dragViewOffsetY);
-        i1 -= k;
-        j1 -= l;
-        af[0] = i1 + dragview.getDragRegion().width() / 2;
-        af[1] = j1 + dragview.getDragRegion().height() / 2;
+        int pixelX = x + getResources().getDimensionPixelSize(R.dimen.dragViewOffsetX);
+        int pixelY = y + getResources().getDimensionPixelSize(R.dimen.dragViewOffsetY);
+        pixelX -= xOffset;
+        pixelY -= yOffset;
+        af[0] = pixelX + dragview.getDragRegion().width() / 2;
+        af[1] = pixelY + dragview.getDragRegion().height() / 2;
         return af;
     }
     
@@ -925,7 +925,10 @@ public class Workspace extends DragableScreenView
                 celllayout.setContainerId(LauncherSettings.Favorites.CONTAINER_DESKTOP);
                 celllayout.setOnLongClickListener(mLongClickListener);
             }
-            addView(cellScreen, 0);
+            // 0 => -1, 解决cellScreen与cellLayout中cellinfo.screenid不匹配问题
+            // 0： 则插入cellLayout为4321
+            // -1: 在队尾插入最新的cellScreen
+            addView(cellScreen, -1);
         }
         
         if (!flag) {
@@ -1627,8 +1630,7 @@ public class Workspace extends DragableScreenView
     public void updateWallpaperOffsetDuringSwitchingPreview() {
         IBinder ibinder = getWindowToken();
         Animation animation = getScreen(mCurrentScreen).getAnimation();
-        if (ibinder != null && animation != null && animation.getStartTime() != -1L)
-        {
+        if (ibinder != null && animation != null && animation.getStartTime() != -1L) {
             float f1 = Math.max(0F, Math.min((float)(SystemClock.uptimeMillis() - animation.getStartTime()) / (float)animation.getDuration(), 1F));
             float f;
             if (getScreenCount() != 1){

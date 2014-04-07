@@ -160,42 +160,50 @@ public class DragController {
         return viewRect;
     }
 
+    /**
+     * 功能： 拖动时创建的图片框显示器
+     * @param view
+     * @return
+     */
     private Bitmap createViewBitmap(View view) {
         view.clearFocus();
         view.setPressed(false);
-        boolean flag = view.willNotCacheDrawing();
+        final boolean noCache = view.willNotCacheDrawing();
         view.setWillNotCacheDrawing(false);
-        int i = view.getDrawingCacheBackgroundColor();
-        if (i != 0) {
+        // 获得绘制缓存位图的背景颜色
+        int color = view.getDrawingCacheBackgroundColor();
+        if (color != 0) {
+            // 设置绘图背景颜色
             view.setDrawingCacheBackgroundColor(0);
         }
         
-        boolean flag1;
+        boolean isCompact;
         if (!(view instanceof ItemIcon)) {
-            flag1 = false;
+            isCompact = false;
         } else {
             if (((ItemIcon)view).isCompact()) {
-                flag1 = false;
+                isCompact = true;
             } else {
-                flag1 = true;
+                isCompact = false;
             }
         }
-        if (flag1) {
+        if (isCompact) {
             ((ItemIcon)view).setCompactViewMode(true);
         }
+        // 重新创建绘图缓存，此时的背景色是黑色
         view.buildDrawingCache();
         Bitmap bitmap = view.getDrawingCache();
         if (bitmap != null) {
             bitmap = Bitmap.createBitmap(bitmap);
-            if (flag1) {
-                ((ItemIcon)view).setCompactViewMode(false);
+            if (isCompact) {
+                ((ItemIcon)view).setCompactViewMode(true);
             }
-            if (flag) {
+            if (noCache) {
                 view.destroyDrawingCache();
-                view.setWillNotCacheDrawing(flag);
+                view.setWillNotCacheDrawing(noCache);
             }
-            if (i != 0) {
-                view.setDrawingCacheBackgroundColor(i);
+            if (color != 0) {
+                view.setDrawingCacheBackgroundColor(color);
             }
         } else {
             Log.e("Launcher.DragController", (new StringBuilder()).

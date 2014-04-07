@@ -20,6 +20,7 @@ import java.util.Iterator;
 
 import cn.minking.launcher.AllAppsList.RemoveInfo;
 import cn.minking.launcher.gadget.Gadget;
+import cn.minking.launcher.gadget.GadgetFactory;
 import cn.minking.launcher.gadget.GadgetInfo;
 import cn.minking.launcher.upsidescene.SceneData;
 import cn.minking.launcher.upsidescene.SceneScreen;
@@ -48,6 +49,7 @@ import android.graphics.Rect;
 import android.nfc.Tag;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.SystemClock;
 import android.preference.PreferenceManager;
 import android.util.Log;
 import android.view.Display;
@@ -205,6 +207,8 @@ public class Launcher extends Activity implements OnClickListener,
     private ItemInfo mLastAddInfo;
     private ApplicationsMessage mApplicationsMessage;
     
+    private long mLastPausedTime;
+    
     // 桌面内容
     private ArrayList<ItemInfo> mDesktopItems = new ArrayList<ItemInfo>();
     public ArrayList<Gadget> mGadgets;
@@ -227,9 +231,11 @@ public class Launcher extends Activity implements OnClickListener,
     };
     
     public Launcher(){
+        mGadgets = new ArrayList<Gadget>();
         mWorkspaceLoading = true;
         mPositionSnap = null;
         mEditingState = 7;
+        mLastPausedTime = -1L;
         mLoadingProgressDialog = null;
         mOnResumeExpectedForActivityResult = false;
     }
@@ -475,7 +481,9 @@ public class Launcher extends Activity implements OnClickListener,
 
     @Override
     protected void onPause() {
-        
+        mDragController.cancelDrag();
+        notifyGadgetStateChanged(3);
+        mLastPausedTime = SystemClock.uptimeMillis();
         super.onPause();
     }
 
@@ -489,6 +497,7 @@ public class Launcher extends Activity implements OnClickListener,
             setEditingState(7);
         }
         mOnResumeExpectedForActivityResult = false;
+        notifyGadgetStateChanged(4);
         // 显示桌面背景
         mDragLayer.updateWallpaper();
         
@@ -501,6 +510,7 @@ public class Launcher extends Activity implements OnClickListener,
         super.onStart();
         mWorkspace.onStart();
         mApplicationsMessage.requestUpdateMessages();
+        notifyGadgetStateChanged(1);
     }
 
     @Override
@@ -526,6 +536,7 @@ public class Launcher extends Activity implements OnClickListener,
         
         mWorkspace.onDestory();
         mApplicationsMessage.destory();
+        notifyGadgetStateChanged(6);
         finishLoading();
     }
 
@@ -1086,21 +1097,52 @@ public class Launcher extends Activity implements OnClickListener,
         */
     }
     
+    /**
+     * 功能： 添加Gadget
+     * @param gadgetinfo
+     */
+    public void addGadget(GadgetInfo gadgetinfo) {
+        CellLayout.CellInfo cellinfo = findSlot(gadgetinfo.cellX, gadgetinfo.cellY, 
+                gadgetinfo.spanX, gadgetinfo.spanY, true);
+        if (cellinfo != null) {
+            Gadget gadget = GadgetFactory.createGadget(this, gadgetinfo, 101);
+            if (gadget != null) {
+                LauncherModel.addItemToDatabase(this, gadgetinfo, 
+                        LauncherSettings.Favorites.CONTAINER_DESKTOP, 
+                        mWorkspace.getCurrentScreenId(), cellinfo.cellX, cellinfo.cellY);
+                gadget.onAdded();
+                gadget.onCreate();
+                mWorkspace.addInCurrentScreen((View)gadget, cellinfo.cellX, cellinfo.cellY,
+                        gadgetinfo.spanX, gadgetinfo.spanY, isWorkspaceLocked());
+                mGadgets.add(gadget);
+                gadget.onResume();
+                if (mEditingState == 8) {
+                    gadget.onEditNormal();
+                }
+            }
+        }
+    }
+    
+    /**
+     * 功能： 删除Gadget
+     * @param iteminfo
+     */
     public void removeGadget(ItemInfo iteminfo) {
-        if (iteminfo.itemType == 5) {
-            Gadget gadget1 = null;
+        if (iteminfo.itemType == LauncherSettings.Favorites.ITEM_TYPE_GADGET) {
+            Gadget gadgetT = null;
             Iterator<Gadget> iterator = mGadgets.iterator();
             while (iterator.hasNext()){
                 Gadget gadget = (Gadget)iterator.next();
                 if (!((View)gadget).getTag().equals(iteminfo)){
                     continue;
                 }
-                gadget1 = gadget;
+                gadgetT = gadget;
+                break;
             }
-            if (gadget1 != null) {
-                mGadgets.remove(gadget1);
-                gadget1.onDestroy();
-                gadget1.onDeleted();
+            if (gadgetT != null) {
+                mGadgets.remove(gadgetT);
+                gadgetT.onDestroy();
+                gadgetT.onDeleted();
             }
         }
     }
@@ -1202,11 +1244,41 @@ public class Launcher extends Activity implements OnClickListener,
         mFolders.clear();
         mFolders.putAll(hashmap);
     }
+    
+    /**
+     * 功能： 找到Gadget
+     * @param id
+     * @return
+     */
+    public Gadget findGadget(long id) {
+        Iterator<Gadget> iterator = mGadgets.iterator();
+        Gadget gadget = null;
+        while (!iterator.hasNext()){
+            gadget = (Gadget)iterator.next();   
+            if (((GadgetInfo)((View)gadget).getTag()).id != id) {
+                break;
+            }
+        };
+        return gadget;
+    }
 
+    /**
+     * 功能： 绑定桌面小控件
+     */
     @Override
     public void bindGadget(GadgetInfo gadgetinfo) {
-        // TODO Auto-generated method stub
-        
+        Gadget gadget = GadgetFactory.createGadget(this, gadgetinfo, 101);
+        if (gadget != null && (gadget instanceof View)) {
+            View view = (View)gadget;
+            view.setTag(gadgetinfo);
+            gadget.onCreate();
+            mWorkspace.addInScreen(view, gadgetinfo.screenId, gadgetinfo.cellX, gadgetinfo.cellY, gadgetinfo.spanX, gadgetinfo.spanY, false);
+            mWorkspace.requestLayout();
+            mGadgets.add(gadget);
+            if (gadgetinfo.screenId == mWorkspace.getCurrentScreenId()) {
+                gadget.onResume();
+            }
+        }
     }
 
     /**
@@ -1313,6 +1385,11 @@ public class Launcher extends Activity implements OnClickListener,
 
     @Override
     public void startBinding() {
+        notifyGadgetStateChanged(3);
+        mGadgets.clear();
+        for (int i = 0; i < mWorkspace.getScreenCount(); i++) {
+            mWorkspace.getCellLayout(i).removeAllViewsInLayout();
+        }
         mHotSeats.startBinding();
     }
 
@@ -1404,8 +1481,57 @@ public class Launcher extends Activity implements OnClickListener,
         }
     }
     
-    private void notifyGadgetStateChanged(int i) {
+    private void notifyGadgetStateChanged(int gadgetState) {
+        for (int i = 0; i < mGadgets.size(); i++) {
+            Gadget gadget = (Gadget)mGadgets.get(i);
+            GadgetInfo gadgetinfo = (GadgetInfo)((View)gadget).getTag();
+            
+            switch (gadgetState)
+            {
+            default:
+                break;
+
+            case GadgetFactory.STATE_ONSTART: // '\001'
+                gadget.onStart();
+                break;
+
+            case GadgetFactory.STATE_ONSTOP: // '\002'
+                gadget.onStop();
+                break;
+
+            case GadgetFactory.STATE_ONPAUSE: // '\003'
+                gadget.onPause();
+                break;
+
+            case GadgetFactory.STATE_ONRESUME: // '\004'
+                if (gadgetinfo.screenId == mWorkspace.getCurrentScreenId()) {
+                    gadget.onResume();
+                }
+                break;
+
+            case GadgetFactory.STATE_ONCREATE: // '\005'
+                gadget.onCreate();
+                break;
+
+            case GadgetFactory.STATE_ONDESTORY: // '\006'
+                gadget.onDestroy();
+                break;
+
+            case GadgetFactory.STATE_ONEDITDISABLE: // '\007'
+                gadget.onEditDisable();
+                break;
+
+            case GadgetFactory.STATE_ONEDITNORMAL: // '\b'
+                gadget.onEditNormal();
+                break;
+            }
+        }
         
+        if (isSceneShowing() || mSceneScreen != null 
+                && gadgetState == GadgetFactory.ID_GADGET_CLOCK_2X4) {
+            mSceneScreen.notifyGadgets(gadgetState);
+        }
+        return;
     }
     
     /**

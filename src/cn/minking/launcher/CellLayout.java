@@ -27,6 +27,7 @@ import android.graphics.drawable.Drawable;
 import android.os.RemoteException;
 import android.os.SystemClock;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.view.ContextMenu;
 import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
@@ -140,24 +141,35 @@ public class CellLayout extends ViewGroup
             } else {
                 dropTarget = (DropTarget)view;
             }
+            if(LOGD){
+                Log.d(TAG, "staytype : " + mLastDragPos.stayType);
+            }
             if (mLastDragPos.stayType != 2) {
-                if (mLastDragPos.stayType != 0) {
+                if (mLastDragPos.stayType != STAY_TYPE_EMPTY) {
                     if (mLastDragPos.stayType != 4) {
                         if (lastDragObject.dragInfo.spanX == 1 && lastDragObject.dragInfo.spanY == 1) {
                             makeEmptyCellAt(cellToGapIndex(mLastDragPos.cellXY[0], mLastDragPos.cellXY[1], mLastDragPos.stayType));
                         } else {
-                            pointToCell(lastDragObject.x - lastDragObject.xOffset, lastDragObject.y - lastDragObject.yOffset, mCellXY);
-                            makeEmptyCellAt(mCellXY[0], mCellXY[1], lastDragObject.dragInfo.spanX, lastDragObject.dragInfo.spanY);
+                            pointToCell(lastDragObject.x - lastDragObject.xOffset, 
+                                    lastDragObject.y - lastDragObject.yOffset, mCellXY);
+                            makeEmptyCellAt(mCellXY[0], mCellXY[1], lastDragObject.dragInfo.spanX, 
+                                    lastDragObject.dragInfo.spanY);
                         }
                     } else {
                         rollbackLayout();
                     }
                 } else{
+                    if(LOGD){
+                        Log.d(TAG, "x y : " + mLastDragPos.cellXY[0] + " , "+ mLastDragPos.cellXY[1]);
+                    }
                     if (mOccupiedCellBak[mLastDragPos.cellXY[0]][mLastDragPos.cellXY[1]] == null){
                         rollbackLayout();
                     }
                 }
             } else {
+                if(LOGD){
+                    Log.d(TAG, "2 : " + mLastCoveringView);
+                }
                 if (dropTarget != null && dropTarget.isDropEnabled() 
                         && dropTarget.acceptDrop(lastDragObject) 
                         && dropTarget != mLastCoveringView) {
@@ -208,6 +220,11 @@ public class CellLayout extends ViewGroup
     }
     
     /********** 常量  **********/
+    private final static boolean LOGD = true;
+    private final static String TAG = "MKHome.CellLayout";
+    
+    private final static int STAY_TYPE_EMPTY = 0;
+    
     static final boolean sAssertionsDisabled = false;
     private ImageView mCellBackground;
     private final int mCellWidth;
@@ -350,119 +367,185 @@ public class CellLayout extends ViewGroup
         return flag;
     }
     
+    /**
+     * 功能： 单元格坐标XY转换成Index
+     * @param cx
+     * @param cy
+     * @param type
+     * @return
+     */
     private int cellToGapIndex(int cx, int cy, int type) {
-        int index = cx + cy * (mHCells + 1);
-        int gap;
+        int index = cx + cy * mHCells;
+        int gapStart;
         if (type != 3) {
-            gap = 0;
+            gapStart = 0;
         } else {
-            gap = 1;
+            gapStart = 1;
         }
-        return gap + index;
+        return gapStart + index;
     }
 
-    private void gapToCellIndexes(int gap, int cellXY[]) {
-        int i1 = -1;
-        int cx = gap % (mHCells + 1);
-        int cy = gap / (mHCells + 1);
-        int index;
+    /**
+     * 功能： 拖拽至两图标之间的GAP，将GAP转换成Index
+     * @param index
+     * @param cellXY
+     */
+    private void gapToCellIndexes(int index, int cellXY[]) {
+        int left = -1;
+        int right = -1;
+        int cx = index % mHCells;
+        int cy = index / mHCells;
+        
+        // GAP不在最左边
         if (cx != 0) {
-            index = (cx + cy * mHCells) - 1;
-        } else {
-            index = -1;
+            left = (cx + cy * mHCells) - 1;
         }
-        cellXY[0] = index;
+        cellXY[0] = left;
+        
+        // GAP不在最右边
         if (cx != mHCells) {
-            i1 = cx + cy * mHCells;
+            right = cx + cy * mHCells;
         }
-        cellXY[1] = i1;
+        cellXY[1] = right;
     }
     
-    private void positionIndexToCell(int i, int cellXY[]) {
-        cellXY[0] = i % mHCells;
-        cellXY[1] = i / mHCells;
+    private void positionIndexToCell(int index, int cellXY[]) {
+        cellXY[0] = index % mHCells;
+        cellXY[1] = index / mHCells;
     }
     
+    /**
+     * 功能： 将触摸的实际坐标值转换成对应的单元格
+     * @param cx
+     * @param cy
+     * @param cellXY
+     */
+    void pointToCell(int cx, int cy, int cellXY[]) {
+        cellXY[0] = (cx - mPaddingLeft) / (mCellWidth + mWidthGap);
+        cellXY[1] = (cy - mPaddingTop) / (mCellHeight + mHeightGap);
+        cellXY[0] = Math.max(0, Math.min(cellXY[0], mHCells - 1));
+        cellXY[1] = Math.max(0, Math.min(cellXY[1], mVCells - 1));
+    }
+    
+    /**
+     * 功能： 拖动时移动其他图标来生成空位置
+     * @param index
+     */
     private void makeEmptyCellAt(int index) {
-        int tmpCellLR[] = mTmpCellLR;
+        // 根据当前位置得到GAP左右的index
+        gapToCellIndexes(index, mTmpCellLR);
+        int leftGap = mTmpCellLR[0];
+        int rightGap = mTmpCellLR[1];
         
-        gapToCellIndexes(index, tmpCellLR);
-        int tcLRx = tmpCellLR[0];
-        int tcLRy = tmpCellLR[1];
+        if (LOGD) {
+            Log.d(TAG, "makeEmptyCellAt : " + index + "leftGap : " + leftGap + "rigth : " + rightGap);
+        }
         
-        while (tcLRy != -1 && tcLRy < mTotalCells){
-            positionIndexToCell(tcLRy, mCellXY);
-            if (mOccupiedCell[mCellXY[0]][mCellXY[1]] == null)
+        // 先从右边开始找空位置，如果找到则break，记住right位置，后续移动使用
+        while (rightGap != -1 && rightGap < mTotalCells){
+            positionIndexToCell(rightGap, mCellXY);
+            if (LOGD) {
+                Log.d(TAG, "rigth : " + rightGap + "mOccupiedCell[mCellXY[0]][mCellXY[1]]" + mOccupiedCell[mCellXY[0]][mCellXY[1]]);
+            }
+            if (mOccupiedCell[mCellXY[0]][mCellXY[1]] == null){
                 break;
-            tcLRy++;
+            }
+            rightGap++;
         }
-        if (tcLRy == mTotalCells){
-            tcLRy = -1;
+        // 如果右边没有位置则标识为-1
+        if (rightGap == mTotalCells){
+            rightGap = -1;
         }
         
-        while(tcLRx != -1 && tcLRx > 0){
-            positionIndexToCell(tcLRx, mCellXY);
-            if (mOccupiedCell[mCellXY[0]][mCellXY[1]] == null)
+        if (LOGD) {
+            Log.d(TAG, "rightGap : " + rightGap);
+        }
+        
+        // 再计算左边，如果找到则break
+        while(leftGap != -1 && leftGap >= 0){
+            positionIndexToCell(leftGap, mCellXY);
+            if (LOGD) {
+                Log.d(TAG, "leftGap : " + leftGap + "mOccupiedCell[mCellXY[0]][mCellXY[1]]" + mOccupiedCell[mCellXY[0]][mCellXY[1]]);
+            }
+            if (mOccupiedCell[mCellXY[0]][mCellXY[1]] == null) {
                 break;
-            tcLRx--;
+            }
+            leftGap--;
         }
-        if (tcLRx < 0){
-            tcLRx = -1;
+        // 没找到标识-1
+        if (leftGap < 0){
+            leftGap = -1;
         }
         
-        if (tcLRx == -1 || tcLRy == -1) {
-            if (tcLRy == -1 && tcLRx == -1) {
-                tcLRx = tmpCellLR[0];
+        if (LOGD) {
+            Log.d(TAG, "leftGap : " + leftGap);
+        }
+        
+        if (leftGap == -1 || rightGap == -1) {
+            if (leftGap == -1) {
+                if (rightGap == -1) {
+                    // 如果左右两边都没找到可移动的位置，则返回
+                    return;
+                }
+                // 左边没有空位置, 则设置右边的GAP，往左移动
+                leftGap = mTmpCellLR[1];
             } else {
-                tcLRx = tmpCellLR[1];
+                leftGap = mTmpCellLR[0];
             }
         } else {
-            if (tcLRy - tcLRx != 2) {
-                if (tcLRy - tmpCellLR[1] > tmpCellLR[0] - tcLRx){
-                    tcLRx = tmpCellLR[0];
+            if (rightGap - leftGap != 2) {
+                if (rightGap - mTmpCellLR[1] > mTmpCellLR[0] - leftGap){
+                    leftGap = mTmpCellLR[0];
                 } else {
-                    tcLRx = tmpCellLR[1];
+                    leftGap = mTmpCellLR[1];
                 }
             } else {
-                if (tcLRy == tmpCellLR[1]){
-                    tcLRx = tmpCellLR[0];
+                if (rightGap == mTmpCellLR[1]){
+                    leftGap = mTmpCellLR[0];
                 } else {
-                    tcLRx = tmpCellLR[1];
+                    leftGap = mTmpCellLR[1];
                 }
             }
         }
         
-        
+        if (LOGD) {
+            Log.d(TAG, "leftGap 2 : " + leftGap);
+        }
+        // 设置移动方向
         int move;
-        if (tcLRx != tmpCellLR[0]){
+        if (leftGap != mTmpCellLR[0]){
             move = 1;
         } else {
             move = -1;
         }
-        while (tcLRx < mTotalCells){
-                
-            positionIndexToCell(tcLRx, mCellXY);
-            tcLRx += move;
+        Object obj = null;
+        while (leftGap < mTotalCells){
+            positionIndexToCell(leftGap, mCellXY);
+            leftGap += move;
             View view = mOccupiedCell[mCellXY[0]][mCellXY[1]];
             if (view != null) {
                 LayoutParams layoutparams = (LayoutParams)view.getLayoutParams();
-                if (layoutparams.cellHSpan != 1 || layoutparams.cellVSpan != 1)
+                if (layoutparams.cellHSpan != 1 || layoutparams.cellVSpan != 1) {
                     continue;
-            } else {
-                break;
-            }
-            mOccupiedCell[mCellXY[0]][mCellXY[1]] = view;
-            if (view != null) {
-                mOccupiedCell[mCellXY[0]][mCellXY[1]] = view;
-                LayoutParams layoutparams = (LayoutParams)view.getLayoutParams();
+                }
+            } 
+            // 替换
+            mOccupiedCell[mCellXY[0]][mCellXY[1]] = (View)obj;
+            if (obj != null) {
+                mOccupiedCell[mCellXY[0]][mCellXY[1]] = (View)obj;
+                LayoutParams layoutparams = (LayoutParams)((View)obj).getLayoutParams();
                 layoutparams.cellX = mCellXY[0];
                 layoutparams.cellY = mCellXY[1];
             }
+            if (view == null) {
+                break;
+            }
+            obj = view;
         }
         requestLayout();
     }
 
-    private void makeEmptyCellAt(int i, int j, int k, int l) {
+    private void makeEmptyCellAt(int cx, int cy, int sx, int sy) {
         
     }
     
@@ -520,20 +603,20 @@ public class CellLayout extends ViewGroup
         ArrayList<ContentProviderOperation> arraylist = new ArrayList<ContentProviderOperation>();
         mEmptyCellNumber = 0;
         
-        for (int i = 0; i < mHCells; i++) {
-            for (int j = 0; j < mVCells; j++) {
-                View view = mOccupiedCell[i][j];
+        for (int x = 0; x < mHCells; x++) {
+            for (int y = 0; y < mVCells; y++) {
+                View view = mOccupiedCell[x][y];
                 if (view != null) {
                     LayoutParams layoutparams = (LayoutParams)view.getLayoutParams();
                     if (layoutparams.accessTag < t) {
                         layoutparams.accessTag = t;
-                        if (view != mOccupiedCellBak[i][j]) {
+                        if (view != mOccupiedCellBak[x][y]) {
                             ItemInfo iteminfo = (ItemInfo)view.getTag();
-                            iteminfo.cellX = i;
-                            iteminfo.cellY = j;
+                            iteminfo.cellX = x;
+                            iteminfo.cellY = y;
                             arraylist.add(LauncherModel.getMoveItemOperation(
                                     iteminfo, LauncherSettings.Favorites.CONTAINER_DESKTOP, 
-                                    getScreenId(), i, j));
+                                    getScreenId(), x, y));
                         }
                     }
                 }
@@ -880,6 +963,7 @@ public class CellLayout extends ViewGroup
             }
         }
         if (!(dragobject.dragInfo instanceof LauncherAppWidgetProviderInfo)) {
+            // 根据实际X,Y 坐标， 转换单元格
             pointToCell(dragobject.x, dragobject.y, mTmpDragPos.cellXY);
             View view = mOccupiedCell[mTmpDragPos.cellXY[0]][mTmpDragPos.cellXY[1]];
             if (mLastCoveringView != null && view != mLastCoveringView) {
@@ -890,7 +974,7 @@ public class CellLayout extends ViewGroup
                 if (view != null){
                     mTmpDragPos.stayType = 4;
                 } else {
-                    mTmpDragPos.stayType = 0;
+                    mTmpDragPos.stayType = STAY_TYPE_EMPTY;
                 }
             } else {
                 view.getHitRect(mRectTmp);
@@ -915,19 +999,23 @@ public class CellLayout extends ViewGroup
                     dragpos.stayType = k;
                 }
             }
+            
+            // 设置最后的拖至位置
             if (!mLastDragPos.equal(mTmpDragPos)) {
+                if(LOGD){
+                    Log.d(TAG, "mTx , mTy :" + mTmpDragPos.cellXY[0] + " , "+ mTmpDragPos.cellXY[1]);
+                }
                 mLastDragPos.set(mTmpDragPos);
                 getHandler().removeCallbacks(mStayConfirm);
                 mStayConfirm.lastDragObject = dragobject;
-                StayConfirm stayconfirm = mStayConfirm;
-                long l;
+                long duration;
                 if (mLastDragPos.stayType != 2) {
-                    l = 150L;
+                    duration = 150L;
                 } else {
                     if (!(view instanceof FolderIcon));
-                    l = 100;
+                    duration = 100L;
                 }
-                postDelayed(stayconfirm, l);
+                postDelayed(mStayConfirm, duration);
             }
         }
     }
@@ -951,12 +1039,12 @@ public class CellLayout extends ViewGroup
                             itemInfo.screenId = getScreenId();
                             itemInfo.cellX = ai[0];
                             itemInfo.cellY = ai[1];
-                            itemInfo.container = -100L;
+                            itemInfo.container = LauncherSettings.Favorites.CONTAINER_DESKTOP;
                             LayoutParams layoutParams = (LayoutParams)view.getLayoutParams();
                             layoutParams.cellX = ai[0];
                             layoutParams.cellY = ai[1];
                             layoutParams.isDragging = false;
-                            layoutParams.dropped = flag;
+                            layoutParams.dropped = true;
                             if (view.getParent() != null) {
                                 view.requestLayout();
                                 updateCellOccupiedMarks(layoutParams, view, false);
@@ -1224,13 +1312,6 @@ public class CellLayout extends ViewGroup
         mCellInfo.screenId = id;
     }
     
-    void pointToCell(int i, int j, int cellXY[]) {
-        cellXY[0] = (i - mPaddingLeft) / (mCellWidth + mWidthGap);
-        cellXY[1] = (j - mPaddingTop) / (mCellHeight + mHeightGap);
-        cellXY[0] = Math.max(0, Math.min(cellXY[0], mHCells - 1));
-        cellXY[1] = Math.max(0, Math.min(cellXY[1], mVCells - 1));
-    }
-
     public void preRemoveView(View view) {
         if (mLastCoveringView == view)
             mLastCoveringView = null;

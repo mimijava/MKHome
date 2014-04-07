@@ -84,4 +84,9 @@ public class SceneScreen extends FrameLayout{
             mIsStarted = false;
         }
     }
+    
+    public void notifyGadgets(int gadgetState) {
+        //mScrollableScreen.notifyGadgets(i);
+        //mDockScreen.notifyGadgets(i);
+    }
 }

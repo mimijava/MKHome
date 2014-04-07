@@ -15,7 +15,7 @@
             android:layout_width="fill_parent"
             android:layout_height="fill_parent" />
         
-        <!-- 所有显示区 -->
+        <!-- 所有内容显示区 -->
         <cn.minking.launcher.Workspace android:id="@id/workspace"
             android:paddingTop="@dimen/status_bar_height"
             android:layout_width="fill_parent"
@@ -23,6 +23,7 @@
             android:layout_marginBottom="@dimen/workspace_margin_bottom"
             />
         
+        <!-- 缩略图显示 -->
         <cn.minking.launcher.WorkspaceThumbnailView android:id="@id/workspace_preview" 
             android:paddingTop="@dimen/status_bar_height" 
             android:visibility="invisible" 

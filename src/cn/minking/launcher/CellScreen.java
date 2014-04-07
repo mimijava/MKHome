@@ -170,8 +170,9 @@ public class CellScreen extends FrameLayout
     }
 
     public void onDragExit(DropTarget.DragObject dragobject) {
-        if (isEditingNewScreenMode())
+        if (isEditingNewScreenMode()) {
             mNewButton.setSelected(false);
+        }
         mCellLayout.onDragExit(dragobject);
     }
 
