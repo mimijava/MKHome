@@ -387,91 +387,36 @@ public class LauncherProvider extends ContentProvider {
                         string = string.substring("launcher:".length(), string.length());
                         
                         // 解析XML文件的属性， 此需要与attrs.xml中的<declare-styleable name="Favorite">次序一致
-                        if (!"className".equals(string))
-                        {
-                            if (!"packageName".equals(string))
-                            {
-                                if (!"container".equals(string))
-                                {
-                                    if (!"screen".equals(string))
-                                    {
-                                        if (!"x".equals(string))
-                                        {
-                                            if (!"y".equals(string))
-                                            {
-                                                if (!"spanX".equals(string))
-                                                {
-                                                    if (!"spanY".equals(string))
-                                                    {
-                                                        if (!"icon".equals(string))
-                                                        {
-                                                            if (!"title".equals(string))
-                                                            {
-                                                                if (!"uri".equals(string))
-                                                                {
-                                                                    if (!"action".equals(string))
-                                                                    {
-                                                                        if (!"iconResource".equals(string))
-                                                                        {
-                                                                            if (!"retained".equals(string))
-                                                                            {
-                                                                                if ("presets_container".equals(string))
-                                                                                    mValues[R.styleable.Favorite_presets_container] = mSet.getAttributeValue(i);
-                                                                            } else
-                                                                            {
-                                                                                mValues[R.styleable.Favorite_retained] = mSet.getAttributeValue(i);
-                                                                            }
-                                                                        } else
-                                                                        {
-                                                                            mValues[R.styleable.Favorite_iconResource] = mSet.getAttributeValue(i);
-                                                                        }
-                                                                    } else
-                                                                    {
-                                                                        mValues[R.styleable.Favorite_action] = mSet.getAttributeValue(i);
-                                                                    }
-                                                                } else
-                                                                {
-                                                                    mValues[R.styleable.Favorite_uri] = mSet.getAttributeValue(i);
-                                                                }
-                                                            } else
-                                                            {
-                                                                mValues[R.styleable.Favorite_title] = mSet.getAttributeValue(i);
-                                                            }
-                                                        } else
-                                                        {
-                                                            mValues[R.styleable.Favorite_icon] = mSet.getAttributeValue(i);
-                                                        }
-                                                    } else
-                                                    {
-                                                        mValues[R.styleable.Favorite_spanY] = mSet.getAttributeValue(i);
-                                                    }
-                                                } else
-                                                {
-                                                    mValues[R.styleable.Favorite_spanX] = mSet.getAttributeValue(i);
-                                                }
-                                            } else
-                                            {
-                                                mValues[R.styleable.Favorite_y] = mSet.getAttributeValue(i);
-                                            }
-                                        } else
-                                        {
-                                            mValues[R.styleable.Favorite_x] = mSet.getAttributeValue(i);
-                                        }
-                                    } else
-                                    {
-                                        mValues[R.styleable.Favorite_screen] = mSet.getAttributeValue(i);
-                                    }
-                                } else
-                                {
-                                    mValues[R.styleable.Favorite_container] = mSet.getAttributeValue(i);
-                                }
-                            } else
-                            {
-                                mValues[R.styleable.Favorite_packageName] = mSet.getAttributeValue(i);
-                            }
-                        } else
-                        {
+                        if ("className".equals(string)) {
                             mValues[R.styleable.Favorite_className] = mSet.getAttributeValue(i);
+                        } else if ("packageName".equals(string)) {
+                            mValues[R.styleable.Favorite_packageName] = mSet.getAttributeValue(i);
+                        } else if ("container".equals(string)) {
+                            mValues[R.styleable.Favorite_container] = mSet.getAttributeValue(i);
+                        } else if ("screen".equals(string)) {
+                            mValues[R.styleable.Favorite_screen] = mSet.getAttributeValue(i);
+                        } else if ("x".equals(string)) {
+                            mValues[R.styleable.Favorite_x] = mSet.getAttributeValue(i);
+                        } else if ("y".equals(string)) {
+                            mValues[R.styleable.Favorite_y] = mSet.getAttributeValue(i);
+                        } else if ("spanX".equals(string)) {
+                            mValues[R.styleable.Favorite_spanX] = mSet.getAttributeValue(i);
+                        } else if ("spanY".equals(string)) {
+                            mValues[R.styleable.Favorite_spanY] = mSet.getAttributeValue(i);
+                        } else if ("icon".equals(string)) {
+                            mValues[R.styleable.Favorite_icon] = mSet.getAttributeValue(i);
+                        } else if ("title".equals(string)) {
+                            mValues[R.styleable.Favorite_title] = mSet.getAttributeValue(i);
+                        } else if ("uri".equals(string)) {
+                            mValues[R.styleable.Favorite_uri] = mSet.getAttributeValue(i);
+                        } else if ("action".equals(string)) {
+                            mValues[R.styleable.Favorite_action] = mSet.getAttributeValue(i);
+                        } else if ("iconResource".equals(string)) {
+                            mValues[R.styleable.Favorite_iconResource] = mSet.getAttributeValue(i);
+                        } else if ("retained".equals(string)) {
+                            mValues[R.styleable.Favorite_retained] = mSet.getAttributeValue(i);
+                        } else if ("presets_container".equals(string)) {
+                            mValues[R.styleable.Favorite_presets_container] = mSet.getAttributeValue(i);
                         }
                     }
                 } else {
